@@ -1,0 +1,4 @@
+CREATE DATABASE auth_db;
+CREATE DATABASE lead_db;
+CREATE DATABASE chatbot_db;
+CREATE DATABASE reporting_db;
