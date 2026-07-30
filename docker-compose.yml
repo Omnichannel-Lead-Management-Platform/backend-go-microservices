@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
       - pgdata:/var/lib/postgresql/data
@@ -17,39 +17,51 @@ services:
     ports:
       - "6379:6379"
 
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
   auth_service:
     build: ./auth_service
-    environment:
-      - DATABASE_URL=postgres://user:password@postgres:5432/auth_db?sslmode=disable
+    env_file:
+      - ./auth_service/.env
     depends_on:
       - postgres
 
   lead_management_service:
     build: ./lead_management_service
-    environment:
-      - DATABASE_URL=postgres://user:password@postgres:5432/lead_db?sslmode=disable
+    env_file:
+      - ./lead_management_service/.env
     depends_on:
       - postgres
       - redis
 
   chatbot_service:
     build: ./chatbot_service
-    environment:
-      - DATABASE_URL=postgres://user:password@postgres:5432/chatbot_db?sslmode=disable
+    env_file:
+      - ./chatbot_service/.env
     depends_on:
       - postgres
       - redis
 
   reporting_service:
     build: ./reporting_service
-    environment:
-      - DATABASE_URL=postgres://user:password@postgres:5432/reporting_db?sslmode=disable
+    env_file:
+      - ./reporting_service/.env
     depends_on:
       - postgres
       - redis
 
   messaging_gateway_service:
     build: ./messaging_gateway_service
+    env_file:
+      - ./messaging_gateway_service/.env
     depends_on:
       - redis
 
