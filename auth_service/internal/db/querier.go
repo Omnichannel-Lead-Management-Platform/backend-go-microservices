@@ -11,6 +11,8 @@ import (
 )
 
 type Querier interface {
+	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	CreateWorkspace(ctx context.Context, name string) (Workspace, error)
 	GetSessionByToken(ctx context.Context, token string) (Session, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetWorkspaceByID(ctx context.Context, id uuid.UUID) (Workspace, error)

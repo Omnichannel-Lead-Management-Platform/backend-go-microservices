@@ -7,9 +7,68 @@ package db
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 )
+
+const createUser = `-- name: CreateUser :one
+INSERT INTO users (workspace_id, role, name, email, password, "emailVerified")
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt"
+`
+
+type CreateUserParams struct {
+	WorkspaceID   uuid.UUID      `json:"workspace_id"`
+	Role          string         `json:"role"`
+	Name          string         `json:"name"`
+	Email         string         `json:"email"`
+	Password      sql.NullString `json:"password"`
+	EmailVerified bool           `json:"emailVerified"`
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, createUser,
+		arg.WorkspaceID,
+		arg.Role,
+		arg.Name,
+		arg.Email,
+		arg.Password,
+		arg.EmailVerified,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Role,
+		&i.Name,
+		&i.Email,
+		&i.Password,
+		&i.EmailVerified,
+		&i.Image,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createWorkspace = `-- name: CreateWorkspace :one
+INSERT INTO workspaces (name)
+VALUES ($1)
+RETURNING id, name, created_at, updated_at
+`
+
+func (q *Queries) CreateWorkspace(ctx context.Context, name string) (Workspace, error) {
+	row := q.db.QueryRowContext(ctx, createWorkspace, name)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
 
 const getSessionByToken = `-- name: GetSessionByToken :one
 SELECT id, "userId", token, "expiresAt", "ipAddress", "userAgent", "createdAt", "updatedAt" FROM session
