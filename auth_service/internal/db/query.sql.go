@@ -15,7 +15,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (workspace_id, role, name, email, password, "emailVerified")
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt"
+RETURNING id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token
 `
 
 type CreateUserParams struct {
@@ -48,6 +48,9 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Image,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RecoverToken,
+		&i.RecoverTokenExpiry,
+		&i.ConfirmToken,
 	)
 	return i, err
 }
@@ -70,29 +73,34 @@ func (q *Queries) CreateWorkspace(ctx context.Context, name string) (Workspace, 
 	return i, err
 }
 
-const getSessionByToken = `-- name: GetSessionByToken :one
-SELECT id, "userId", token, "expiresAt", "ipAddress", "userAgent", "createdAt", "updatedAt" FROM session
-WHERE token = $1 LIMIT 1
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token FROM users
+WHERE email = $1 LIMIT 1
 `
 
-func (q *Queries) GetSessionByToken(ctx context.Context, token string) (Session, error) {
-	row := q.db.QueryRowContext(ctx, getSessionByToken, token)
-	var i Session
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
+	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.UserId,
-		&i.Token,
-		&i.ExpiresAt,
-		&i.IpAddress,
-		&i.UserAgent,
+		&i.WorkspaceID,
+		&i.Role,
+		&i.Name,
+		&i.Email,
+		&i.Password,
+		&i.EmailVerified,
+		&i.Image,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RecoverToken,
+		&i.RecoverTokenExpiry,
+		&i.ConfirmToken,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt" FROM users
+SELECT id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token FROM users
 WHERE id = $1 LIMIT 1
 `
 
@@ -110,6 +118,9 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.Image,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RecoverToken,
+		&i.RecoverTokenExpiry,
+		&i.ConfirmToken,
 	)
 	return i, err
 }
@@ -127,6 +138,79 @@ func (q *Queries) GetWorkspaceByID(ctx context.Context, id uuid.UUID) (Workspace
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :one
+UPDATE users
+SET password = $2
+WHERE id = $1
+RETURNING id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token
+`
+
+type UpdateUserPasswordParams struct {
+	ID       uuid.UUID      `json:"id"`
+	Password sql.NullString `json:"password"`
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUserPassword, arg.ID, arg.Password)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Role,
+		&i.Name,
+		&i.Email,
+		&i.Password,
+		&i.EmailVerified,
+		&i.Image,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RecoverToken,
+		&i.RecoverTokenExpiry,
+		&i.ConfirmToken,
+	)
+	return i, err
+}
+
+const updateUserTokens = `-- name: UpdateUserTokens :one
+UPDATE users 
+SET recover_token = $2, recover_token_expiry = $3, confirm_token = $4
+WHERE id = $1
+RETURNING id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token
+`
+
+type UpdateUserTokensParams struct {
+	ID                 uuid.UUID      `json:"id"`
+	RecoverToken       sql.NullString `json:"recover_token"`
+	RecoverTokenExpiry sql.NullTime   `json:"recover_token_expiry"`
+	ConfirmToken       sql.NullString `json:"confirm_token"`
+}
+
+func (q *Queries) UpdateUserTokens(ctx context.Context, arg UpdateUserTokensParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUserTokens,
+		arg.ID,
+		arg.RecoverToken,
+		arg.RecoverTokenExpiry,
+		arg.ConfirmToken,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Role,
+		&i.Name,
+		&i.Email,
+		&i.Password,
+		&i.EmailVerified,
+		&i.Image,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RecoverToken,
+		&i.RecoverTokenExpiry,
+		&i.ConfirmToken,
 	)
 	return i, err
 }

@@ -6,58 +6,24 @@ package db
 
 import (
 	"database/sql"
-	"time"
 
 	"github.com/google/uuid"
 )
 
-type Account struct {
-	ID                    uuid.UUID      `json:"id"`
-	UserId                uuid.UUID      `json:"userId"`
-	ProviderId            string         `json:"providerId"`
-	AccountId             string         `json:"accountId"`
-	AccessToken           sql.NullString `json:"accessToken"`
-	RefreshToken          sql.NullString `json:"refreshToken"`
-	IdToken               sql.NullString `json:"idToken"`
-	AccessTokenExpiresAt  sql.NullTime   `json:"accessTokenExpiresAt"`
-	RefreshTokenExpiresAt sql.NullTime   `json:"refreshTokenExpiresAt"`
-	Scope                 sql.NullString `json:"scope"`
-	Password              sql.NullString `json:"password"`
-	CreatedAt             sql.NullTime   `json:"createdAt"`
-	UpdatedAt             sql.NullTime   `json:"updatedAt"`
-}
-
-type Session struct {
-	ID        uuid.UUID      `json:"id"`
-	UserId    uuid.UUID      `json:"userId"`
-	Token     string         `json:"token"`
-	ExpiresAt time.Time      `json:"expiresAt"`
-	IpAddress sql.NullString `json:"ipAddress"`
-	UserAgent sql.NullString `json:"userAgent"`
-	CreatedAt sql.NullTime   `json:"createdAt"`
-	UpdatedAt sql.NullTime   `json:"updatedAt"`
-}
-
 type User struct {
-	ID            uuid.UUID      `json:"id"`
-	WorkspaceID   uuid.UUID      `json:"workspace_id"`
-	Role          string         `json:"role"`
-	Name          string         `json:"name"`
-	Email         string         `json:"email"`
-	Password      sql.NullString `json:"password"`
-	EmailVerified bool           `json:"emailVerified"`
-	Image         sql.NullString `json:"image"`
-	CreatedAt     sql.NullTime   `json:"createdAt"`
-	UpdatedAt     sql.NullTime   `json:"updatedAt"`
-}
-
-type Verification struct {
-	ID         uuid.UUID    `json:"id"`
-	Identifier string       `json:"identifier"`
-	Value      string       `json:"value"`
-	ExpiresAt  time.Time    `json:"expiresAt"`
-	CreatedAt  sql.NullTime `json:"createdAt"`
-	UpdatedAt  sql.NullTime `json:"updatedAt"`
+	ID                 uuid.UUID      `json:"id"`
+	WorkspaceID        uuid.UUID      `json:"workspace_id"`
+	Role               string         `json:"role"`
+	Name               string         `json:"name"`
+	Email              string         `json:"email"`
+	Password           sql.NullString `json:"password"`
+	EmailVerified      bool           `json:"emailVerified"`
+	Image              sql.NullString `json:"image"`
+	CreatedAt          sql.NullTime   `json:"createdAt"`
+	UpdatedAt          sql.NullTime   `json:"updatedAt"`
+	RecoverToken       sql.NullString `json:"recover_token"`
+	RecoverTokenExpiry sql.NullTime   `json:"recover_token_expiry"`
+	ConfirmToken       sql.NullString `json:"confirm_token"`
 }
 
 type Workspace struct {
