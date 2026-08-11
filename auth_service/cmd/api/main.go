@@ -1,26 +1,35 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
+	"github.com/aarondl/authboss/v3"
+	abclientstate "github.com/aarondl/authboss-clientstate"
+	"github.com/aarondl/authboss/v3/defaults"
+	_ "github.com/aarondl/authboss/v3/auth"
+	_ "github.com/aarondl/authboss/v3/register"
+	_ "github.com/aarondl/authboss/v3/recover"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/lib/pq"
+
+	"github.com/omnichannel/auth_service/internal/auth"
+	"github.com/omnichannel/auth_service/internal/db"
 )
 
 func runMigrations(dbURL string) {
 	fmt.Println("Running database migrations...")
-	
-	// Wait a bit for postgres to be fully ready in docker compose
 	time.Sleep(2 * time.Second)
 
-	m, err := migrate.New(
-		"file://migrations",
-		dbURL,
-	)
+	m, err := migrate.New("file://migrations", dbURL)
 	if err != nil {
 		log.Fatalf("Failed to initialize migrations: %v", err)
 	}
@@ -32,13 +41,51 @@ func runMigrations(dbURL string) {
 
 func main() {
 	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL != "" {
-		runMigrations(dbURL)
-	} else {
-		fmt.Println("WARNING: DATABASE_URL not set, skipping migrations.")
+	if dbURL == "" {
+		dbURL = "postgresql://postgres:password@localhost:5433/postgres?sslmode=disable"
 	}
-	fmt.Println("Starting auth_service...")
+	runMigrations(dbURL)
+
+	conn, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("cannot connect to db: %v", err)
+	}
+	defer conn.Close()
+
+	querier := db.New(conn)
 	
-	// Block forever for demo purposes
-	select {}
+	// Initialize Authboss
+	ab := authboss.New()
+	
+	// Set Core defaults (true = API mode, false = use Email not Username)
+	defaults.SetCore(&ab.Config, true, false)
+	ab.Config.Core.ViewRenderer = defaults.JSONRenderer{}
+	ab.Config.Core.MailRenderer = defaults.JSONRenderer{}
+	ab.Config.Core.Mailer = defaults.NewLogMailer(os.Stdout)
+
+	// Use API mode (JSON responses instead of HTML redirects)
+	ab.Config.Modules.LogoutMethod = "POST"
+	ab.Config.Storage.Server = auth.NewServerStorer(querier)
+	ab.Config.Storage.SessionState = abclientstate.NewSessionStorer("authboss_cookie", []byte("secret-key"), nil)
+	ab.Config.Storage.CookieState = abclientstate.NewCookieStorer([]byte("secret-key"), nil)
+
+	if err := ab.Init(); err != nil {
+		log.Fatalf("Authboss init failed: %v", err)
+	}
+
+	router := chi.NewRouter()
+	router.Use(middleware.Logger)
+	
+	// Mount Authboss
+	router.Use(ab.LoadClientStateMiddleware)
+	router.Mount("/api/auth", ab.Config.Core.Router)
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	fmt.Printf("Starting auth_service on port %s...\n", port)
+	if err := http.ListenAndServe(":"+port, router); err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
 }
