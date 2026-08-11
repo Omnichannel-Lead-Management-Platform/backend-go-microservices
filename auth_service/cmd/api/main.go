@@ -57,11 +57,17 @@ func main() {
 	// Initialize Authboss
 	ab := authboss.New()
 	
-	// Set Core defaults (true = API mode, false = use Email not Username)
-	defaults.SetCore(&ab.Config, true, false)
+	// ViewRenderer must be set before SetCore so Responder and Redirector can use it
 	ab.Config.Core.ViewRenderer = defaults.JSONRenderer{}
 	ab.Config.Core.MailRenderer = defaults.JSONRenderer{}
+	
+	// Set Core defaults (true = API mode, false = use Email not Username)
+	defaults.SetCore(&ab.Config, true, false)
 	ab.Config.Core.Mailer = defaults.NewLogMailer(os.Stdout)
+	ab.Config.Core.Logger = defaults.NewLogger(os.Stdout)
+
+	// Define the mount path so Authboss internally registers the correct URLs
+	ab.Config.Paths.Mount = "/api/auth"
 
 	// Use API mode (JSON responses instead of HTML redirects)
 	ab.Config.Modules.LogoutMethod = "POST"
@@ -78,7 +84,9 @@ func main() {
 	
 	// Mount Authboss
 	router.Use(ab.LoadClientStateMiddleware)
-	router.Mount("/api/auth", ab.Config.Core.Router)
+	// chi.Mount does not alter r.URL.Path for standard http.Handlers, so we MUST strip the prefix manually
+	// before passing it to Authboss's internal defaults.Router (which expects exact matches like "/login")
+	router.Mount("/api/auth", http.StripPrefix("/api/auth", ab.Config.Core.Router))
 
 	port := os.Getenv("PORT")
 	if port == "" {
