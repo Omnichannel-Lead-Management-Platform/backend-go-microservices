@@ -71,6 +71,7 @@ func main() {
 
 	// Use API mode (JSON responses instead of HTML redirects)
 	ab.Config.Modules.LogoutMethod = "POST"
+	ab.Config.Modules.RegisterPreserveFields = []string{"name", "company_name"}
 	ab.Config.Storage.Server = auth.NewServerStorer(querier)
 	ab.Config.Storage.SessionState = abclientstate.NewSessionStorer("authboss_cookie", []byte("secret-key"), nil)
 	ab.Config.Storage.CookieState = abclientstate.NewCookieStorer([]byte("secret-key"), nil)
