@@ -14,6 +14,15 @@ import (
 // User represents the Authboss User
 type User struct {
 	db.User
+	Arbitrary map[string]string
+}
+
+func (u *User) GetArbitrary() map[string]string {
+	return u.Arbitrary
+}
+
+func (u *User) PutArbitrary(arbitrary map[string]string) {
+	u.Arbitrary = arbitrary
 }
 
 func (u *User) GetPID() string { return u.Email }
@@ -101,10 +110,28 @@ func (s *ServerStorer) Create(ctx context.Context, user authboss.User) error {
 		return errors.New("invalid user type")
 	}
 
+	companyName := "Default Company"
+	userName := "New User"
+	
+	if u.Arbitrary != nil {
+		if c, ok := u.Arbitrary["company_name"]; ok && c != "" {
+			companyName = c
+		}
+		if n, ok := u.Arbitrary["name"]; ok && n != "" {
+			userName = n
+		}
+	}
+
+	// Create workspace first
+	createdWorkspace, err := s.db.CreateWorkspace(ctx, companyName)
+	if err != nil {
+		return err
+	}
+
 	arg := db.CreateUserParams{
-		WorkspaceID:   u.WorkspaceID, 
-		Role:          "agent",
-		Name:          u.Name,
+		WorkspaceID:   createdWorkspace.ID, 
+		Role:          "admin", // First user of a workspace is an admin
+		Name:          userName,
 		Email:         u.Email,
 		Password:      u.Password,
 		EmailVerified: false,
