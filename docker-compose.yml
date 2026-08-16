@@ -30,7 +30,9 @@ services:
       - pgadmin_data:/var/lib/pgadmin
 
   auth_service:
-    build: ./auth_service
+    build: 
+      context: .
+      dockerfile: auth_service/Dockerfile
     ports:
       - "8080:8080"
     env_file:

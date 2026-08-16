@@ -61,8 +61,11 @@ func main() {
 	ab.Config.Core.ViewRenderer = defaults.JSONRenderer{}
 	ab.Config.Core.MailRenderer = defaults.JSONRenderer{}
 	
-	// Set Core defaults (true = API mode, false = use Email not Username)
 	defaults.SetCore(&ab.Config, true, false)
+	
+	// Set custom Responder AFTER SetCore, so SetCore doesn't overwrite it
+	ab.Config.Core.Responder = auth.NewAPIResponder()
+	
 	ab.Config.Core.Mailer = defaults.NewLogMailer(os.Stdout)
 	ab.Config.Core.Logger = defaults.NewLogger(os.Stdout)
 
