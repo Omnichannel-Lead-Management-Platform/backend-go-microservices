@@ -52,7 +52,7 @@ func (u *User) PutRecoverToken(token string) {
 
 // ServerStorer implements authboss.ServerStorer
 type ServerStorer struct {
-	db db.Querier
+	db db.Querier  
 }
 
 func NewServerStorer(querier db.Querier) *ServerStorer {
