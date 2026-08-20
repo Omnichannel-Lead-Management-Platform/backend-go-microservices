@@ -56,10 +56,22 @@ func (a *APIResponder) Respond(w http.ResponseWriter, r *http.Request, code int,
 	}
 
 	// We can safely return a simple map
-	responseData := map[string]interface{}{
-		"note": "Session token has been securely set in your HTTP-Only cookies.",
-	}
-
+	responseData := map[string]interface{}{}
 	api.Success(w, responseData, successMsg)
 	return nil
 }
+
+// Redirect intercepts Authboss successful actions (like successful login or registration)
+// and returns a standardized JSON 200 OK instead of actually doing an HTTP 302/307 redirect.
+func (a *APIResponder) Redirect(w http.ResponseWriter, r *http.Request, ro authboss.RedirectOptions) error {
+	fmt.Println("CUSTOM REDIRECTOR CALLED!!!")
+	successMsg := ro.Success
+	if successMsg == "" {
+		successMsg = "Success"
+	}
+	
+	responseData := map[string]interface{}{}
+	api.Success(w, responseData, successMsg)
+	return nil
+}
+

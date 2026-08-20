@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/aarondl/authboss/v3"
@@ -139,6 +140,9 @@ func (s *ServerStorer) Create(ctx context.Context, user authboss.User) error {
 
 	createdUser, err := s.db.CreateUser(ctx, arg)
 	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key value") || strings.Contains(err.Error(), "unique constraint") {
+			return authboss.ErrUserFound
+		}
 		return err
 	}
 	u.ID = createdUser.ID
