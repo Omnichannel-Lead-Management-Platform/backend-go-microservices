@@ -61,8 +61,20 @@ func main() {
 	ab.Config.Core.ViewRenderer = defaults.JSONRenderer{}
 	ab.Config.Core.MailRenderer = defaults.JSONRenderer{}
 	
-	// Set Core defaults (true = API mode, false = use Email not Username)
 	defaults.SetCore(&ab.Config, true, false)
+	
+	// Set custom Responder and Redirector AFTER SetCore, so SetCore doesn't overwrite it
+	customResponder := auth.NewAPIResponder()
+	ab.Config.Core.Responder = customResponder
+	ab.Config.Core.Redirector = customResponder
+	
+	// Ensure JSON body reader extracts our arbitrary fields during registration
+	if reader, ok := ab.Config.Core.BodyReader.(*defaults.HTTPBodyReader); ok {
+		reader.Whitelist = map[string][]string{
+			"register": {"name", "company_name"},
+		}
+	}
+
 	ab.Config.Core.Mailer = defaults.NewLogMailer(os.Stdout)
 	ab.Config.Core.Logger = defaults.NewLogger(os.Stdout)
 
@@ -79,6 +91,10 @@ func main() {
 	if err := ab.Init(); err != nil {
 		log.Fatalf("Authboss init failed: %v", err)
 	}
+	
+	// Force override in case ab.Init() overwrites it in API mode
+	ab.Core.Responder = customResponder
+	ab.Core.Redirector = customResponder
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
