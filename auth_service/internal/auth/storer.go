@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
-	"github.com/google/uuid"
 	"github.com/aarondl/authboss/v3"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 
 	"github.com/omnichannel/auth_service/internal/db"
 )
@@ -40,15 +43,43 @@ func (u *User) PutPassword(password string) {
 	u.Password = sql.NullString{String: password, Valid: true}
 }
 
-func (u *User) GetRecoverToken() string {
+func (u *User) GetEmail() string {
+	return u.Email
+}
+
+func (u *User) PutEmail(email string) {
+	u.Email = email
+}
+
+func (u *User) GetRecoverSelector() string {
 	if u.RecoverToken.Valid {
+		// In a real implementation with split tokens, this would be a selector column
 		return u.RecoverToken.String
 	}
 	return ""
 }
 
-func (u *User) PutRecoverToken(token string) {
-	u.RecoverToken = sql.NullString{String: token, Valid: true}
+func (u *User) PutRecoverSelector(selector string) {
+	u.RecoverToken = sql.NullString{String: selector, Valid: true}
+}
+
+func (u *User) GetRecoverVerifier() string {
+	return u.GetRecoverSelector() // For simplicity if using a single token
+}
+
+func (u *User) PutRecoverVerifier(verifier string) {
+	// Not storing verifier separately in this simple implementation
+}
+
+func (u *User) GetRecoverExpiry() time.Time {
+	if u.RecoverTokenExpiry.Valid {
+		return u.RecoverTokenExpiry.Time
+	}
+	return time.Time{}
+}
+
+func (u *User) PutRecoverExpiry(expiry time.Time) {
+	u.RecoverTokenExpiry = sql.NullTime{Time: expiry, Valid: true}
 }
 
 // ServerStorer implements authboss.ServerStorer
@@ -123,15 +154,46 @@ func (s *ServerStorer) Create(ctx context.Context, user authboss.User) error {
 		}
 	}
 
-	// Create workspace first
-	createdWorkspace, err := s.db.CreateWorkspace(ctx, companyName)
-	if err != nil {
-		return err
+	var workspaceID uuid.UUID
+	var role = "admin" // Default to admin for new workspaces
+
+	if u.Arbitrary != nil && u.Arbitrary["invite_token"] != "" {
+		tokenStr := u.Arbitrary["invite_token"]
+		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method")
+			}
+			return JWTSecret, nil
+		})
+
+		if err != nil || !token.Valid {
+			return errors.New("invalid or expired invite token")
+		}
+
+		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			if wsIDStr, ok := claims["workspace_id"].(string); ok {
+				workspaceID, err = uuid.Parse(wsIDStr)
+				if err == nil {
+					role = "agent" // Invited users are agents
+				}
+			}
+		}
+
+		if workspaceID == uuid.Nil {
+			return errors.New("invalid workspace ID in invite token")
+		}
+	} else {
+		// Create workspace first since no invite token was provided
+		createdWorkspace, err := s.db.CreateWorkspace(ctx, companyName)
+		if err != nil {
+			return err
+		}
+		workspaceID = createdWorkspace.ID
 	}
 
 	arg := db.CreateUserParams{
-		WorkspaceID:   createdWorkspace.ID, 
-		Role:          "admin", // First user of a workspace is an admin
+		WorkspaceID:   workspaceID, 
+		Role:          role,
 		Name:          userName,
 		Email:         u.Email,
 		Password:      u.Password,

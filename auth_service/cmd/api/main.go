@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/aarondl/authboss/v3"
-	abclientstate "github.com/aarondl/authboss-clientstate"
 	"github.com/aarondl/authboss/v3/defaults"
 	_ "github.com/aarondl/authboss/v3/auth"
 	_ "github.com/aarondl/authboss/v3/register"
@@ -71,11 +70,11 @@ func main() {
 	// Ensure JSON body reader extracts our arbitrary fields during registration
 	if reader, ok := ab.Config.Core.BodyReader.(*defaults.HTTPBodyReader); ok {
 		reader.Whitelist = map[string][]string{
-			"register": {"name", "company_name"},
+			"register": {"name", "company_name", "invite_token"},
 		}
 	}
 
-	ab.Config.Core.Mailer = defaults.NewLogMailer(os.Stdout)
+	ab.Config.Core.Mailer = auth.NewFileMailer("./emails")
 	ab.Config.Core.Logger = defaults.NewLogger(os.Stdout)
 
 	// Define the mount path so Authboss internally registers the correct URLs
@@ -83,10 +82,11 @@ func main() {
 
 	// Use API mode (JSON responses instead of HTML redirects)
 	ab.Config.Modules.LogoutMethod = "POST"
-	ab.Config.Modules.RegisterPreserveFields = []string{"name", "company_name"}
+	ab.Config.Modules.RecoverLoginAfterRecovery = true
+	ab.Config.Modules.RegisterPreserveFields = []string{"name", "company_name", "invite_token"}
 	ab.Config.Storage.Server = auth.NewServerStorer(querier)
-	ab.Config.Storage.SessionState = abclientstate.NewSessionStorer("authboss_cookie", []byte("secret-key"), nil)
-	ab.Config.Storage.CookieState = abclientstate.NewCookieStorer([]byte("secret-key"), nil)
+	ab.Config.Storage.SessionState = auth.NewJWTReadWriter()
+	ab.Config.Storage.CookieState = auth.NewJWTReadWriter()
 
 	if err := ab.Init(); err != nil {
 		log.Fatalf("Authboss init failed: %v", err)
@@ -104,6 +104,18 @@ func main() {
 	// chi.Mount does not alter r.URL.Path for standard http.Handlers, so we MUST strip the prefix manually
 	// before passing it to Authboss's internal defaults.Router (which expects exact matches like "/login")
 	router.Mount("/api/auth", http.StripPrefix("/api/auth", ab.Config.Core.Router))
+
+	// Protected routes
+	router.Group(func(r chi.Router) {
+		r.Use(authboss.Middleware(ab, true, false, false))
+		r.Get("/api/auth/me", auth.MeHandler(ab))
+		
+		// Admin-only routes
+		r.Group(func(adminRoutes chi.Router) {
+			adminRoutes.Use(auth.RequireRole(ab, "admin"))
+			adminRoutes.Post("/api/auth/invite", auth.GenerateInviteHandler(ab))
+		})
+	})
 
 	port := os.Getenv("PORT")
 	if port == "" {
