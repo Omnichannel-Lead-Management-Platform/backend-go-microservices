@@ -11,6 +11,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/omnichannel/auth_service/internal/db"
+	"github.com/sqlc-dev/pqtype"
 	"github.com/omnichannel/common/api"
 )
 
@@ -236,5 +237,81 @@ func IntrospectHandler(ab *authboss.Authboss) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
+	}
+}
+
+// UpdateWorkspaceRequest represents the payload for updating workspace settings
+type UpdateWorkspaceRequest struct {
+	Name     string          `json:"name"`
+	Settings json.RawMessage `json:"settings"`
+}
+
+// GetWorkspaceHandler returns the current workspace details
+func GetWorkspaceHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u, err := ab.CurrentUser(r)
+		if err != nil || u == nil {
+			api.Error(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+
+		user, ok := u.(*User)
+		if !ok {
+			api.Error(w, http.StatusInternalServerError, "Invalid user type")
+			return
+		}
+
+		workspace, err := querier.GetWorkspaceByID(r.Context(), user.WorkspaceID)
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to retrieve workspace")
+			return
+		}
+
+		api.Success(w, workspace, "Workspace retrieved successfully")
+	}
+}
+
+// UpdateWorkspaceHandler allows an admin to update workspace details
+func UpdateWorkspaceHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u, err := ab.CurrentUser(r)
+		if err != nil || u == nil {
+			api.Error(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+
+		user, ok := u.(*User)
+		if !ok {
+			api.Error(w, http.StatusInternalServerError, "Invalid user type")
+			return
+		}
+
+		var req UpdateWorkspaceRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			api.Error(w, http.StatusBadRequest, "Invalid request payload")
+			return
+		}
+
+		if req.Name == "" {
+			api.Error(w, http.StatusBadRequest, "Workspace name is required")
+			return
+		}
+		
+		if len(req.Settings) == 0 {
+			req.Settings = json.RawMessage(`{}`)
+		}
+
+		workspace, err := querier.UpdateWorkspace(r.Context(), db.UpdateWorkspaceParams{
+			ID:       user.WorkspaceID,
+			Name:     req.Name,
+			Settings: pqtype.NullRawMessage{RawMessage: req.Settings, Valid: true},
+		})
+		
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to update workspace")
+			return
+		}
+
+		api.Success(w, workspace, "Workspace updated successfully")
 	}
 }
