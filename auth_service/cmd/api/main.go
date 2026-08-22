@@ -175,6 +175,7 @@ func main() {
 	router.Group(func(r chi.Router) {
 		r.Use(authboss.Middleware(ab, true, false, false))
 		r.Get("/api/auth/me", auth.MeHandler(ab))
+		r.Get("/api/auth/introspect", auth.IntrospectHandler(ab))
 		
 		// Admin-only routes
 		r.Group(func(adminRoutes chi.Router) {
@@ -183,6 +184,8 @@ func main() {
 			adminRoutes.Post("/api/auth/roles", auth.CreateRoleHandler(ab, querier))
 			adminRoutes.Get("/api/auth/users", auth.ListUsersHandler(ab, querier))
 			adminRoutes.Put("/api/auth/users/{id}/role", auth.UpdateUserRoleHandler(ab, querier))
+			adminRoutes.Get("/api/auth/workspace", auth.GetWorkspaceHandler(ab, querier))
+			adminRoutes.Put("/api/auth/workspace", auth.UpdateWorkspaceHandler(ab, querier))
 		})
 	})
 

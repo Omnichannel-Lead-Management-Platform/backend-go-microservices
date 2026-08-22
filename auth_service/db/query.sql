@@ -73,3 +73,10 @@ WHERE id = $1 AND workspace_id = $3;
 SELECT * FROM roles
 WHERE workspace_id = $1;
 
+
+-- name: UpdateWorkspace :one
+UPDATE workspaces
+SET name = $2, settings = $3, "updatedAt" = NOW()
+WHERE id = $1
+RETURNING *;
+

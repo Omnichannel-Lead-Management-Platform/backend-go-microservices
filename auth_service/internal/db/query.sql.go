@@ -10,6 +10,7 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/sqlc-dev/pqtype"
 )
 
 const assignPermissionToRole = `-- name: AssignPermissionToRole :exec
@@ -107,7 +108,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 const createWorkspace = `-- name: CreateWorkspace :one
 INSERT INTO workspaces (name)
 VALUES ($1)
-RETURNING id, name, created_at, updated_at
+RETURNING id, name, created_at, updated_at, settings
 `
 
 func (q *Queries) CreateWorkspace(ctx context.Context, name string) (Workspace, error) {
@@ -118,6 +119,7 @@ func (q *Queries) CreateWorkspace(ctx context.Context, name string) (Workspace, 
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Settings,
 	)
 	return i, err
 }
@@ -336,7 +338,7 @@ func (q *Queries) GetUsersByWorkspaceID(ctx context.Context, workspaceID uuid.UU
 }
 
 const getWorkspaceByID = `-- name: GetWorkspaceByID :one
-SELECT id, name, created_at, updated_at FROM workspaces
+SELECT id, name, created_at, updated_at, settings FROM workspaces
 WHERE id = $1 LIMIT 1
 `
 
@@ -348,6 +350,7 @@ func (q *Queries) GetWorkspaceByID(ctx context.Context, id uuid.UUID) (Workspace
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Settings,
 	)
 	return i, err
 }
@@ -438,6 +441,32 @@ func (q *Queries) UpdateUserTokens(ctx context.Context, arg UpdateUserTokensPara
 		&i.RecoverTokenExpiry,
 		&i.ConfirmToken,
 		&i.RoleID,
+	)
+	return i, err
+}
+
+const updateWorkspace = `-- name: UpdateWorkspace :one
+UPDATE workspaces
+SET name = $2, settings = $3, "updatedAt" = NOW()
+WHERE id = $1
+RETURNING id, name, created_at, updated_at, settings
+`
+
+type UpdateWorkspaceParams struct {
+	ID       uuid.UUID             `json:"id"`
+	Name     string                `json:"name"`
+	Settings pqtype.NullRawMessage `json:"settings"`
+}
+
+func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error) {
+	row := q.db.QueryRowContext(ctx, updateWorkspace, arg.ID, arg.Name, arg.Settings)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Settings,
 	)
 	return i, err
 }

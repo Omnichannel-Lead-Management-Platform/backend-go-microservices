@@ -26,6 +26,7 @@ type Querier interface {
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (User, error)
 	UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error
 	UpdateUserTokens(ctx context.Context, arg UpdateUserTokensParams) (User, error)
+	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
 }
 
 var _ Querier = (*Queries)(nil)
