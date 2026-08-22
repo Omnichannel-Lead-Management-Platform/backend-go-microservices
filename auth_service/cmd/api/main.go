@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/aarondl/authboss/v3"
@@ -43,6 +44,10 @@ func runMigrations(dbURL string) {
 }
 
 func main() {
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, relying on environment variables")
+	}
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgresql://postgres:password@localhost:5433/postgres?sslmode=disable"
@@ -78,7 +83,7 @@ func main() {
 		}
 	}
 
-	ab.Config.Core.Mailer = auth.NewFileMailer("./emails")
+	ab.Config.Core.Mailer = auth.NewSMTPMailer()
 	ab.Config.Core.Logger = defaults.NewLogger(os.Stdout)
 
 	// Define the mount path so Authboss internally registers the correct URLs
@@ -126,7 +131,7 @@ func main() {
 		}
 		return false, nil
 	}
-	ab.Events.After(authboss.EventLogin, injectSessionClaims)
+	ab.Events.After(authboss.EventAuth, injectSessionClaims)
 	ab.Events.After(authboss.EventRegister, injectSessionClaims)
 
 	// Blacklist JWT on logout
@@ -172,4 +177,17 @@ func main() {
 	if err := http.ListenAndServe(":"+port, router); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
+}
+
+type RedisTokenBlacklister struct {
+	client *redis.Client
+}
+
+func (r *RedisTokenBlacklister) Blacklist(ctx context.Context, token string, expiration time.Duration) error {
+	return r.client.Set(ctx, token, "blacklisted", expiration).Err()
+}
+
+func (r *RedisTokenBlacklister) IsBlacklisted(ctx context.Context, token string) bool {
+	res, err := r.client.Get(ctx, token).Result()
+	return err == nil && res == "blacklisted"
 }

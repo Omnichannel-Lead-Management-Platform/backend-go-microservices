@@ -92,3 +92,19 @@ func stringContains(s, substr string) bool {
 	}
 	return false
 }
+
+func TestNewSMTPMailer(t *testing.T) {
+	os.Setenv("MAIL_PORT", "1025")
+	os.Setenv("MAIL_HOST", "localhost")
+	defer os.Unsetenv("MAIL_PORT")
+	defer os.Unsetenv("MAIL_HOST")
+
+	mailer := NewSMTPMailer()
+	if mailer.Port != 1025 {
+		t.Errorf("expected port 1025, got %d", mailer.Port)
+	}
+	if mailer.Host != "localhost" {
+		t.Errorf("expected host localhost, got %s", mailer.Host)
+	}
+}
+
