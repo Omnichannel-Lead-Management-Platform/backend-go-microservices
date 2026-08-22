@@ -7,9 +7,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/go-chi/cors"
+	"github.com/go-chi/httprate"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 
@@ -148,6 +152,19 @@ func main() {
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
 	
+	// CORS middleware
+	router.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
+
+	// Rate limiting: 100 requests per minute per IP
+	router.Use(httprate.LimitByIP(100, 1*time.Minute))
+	
 	// Mount Authboss
 	router.Use(ab.LoadClientStateMiddleware)
 	// chi.Mount does not alter r.URL.Path for standard http.Handlers, so we MUST strip the prefix manually
@@ -174,9 +191,33 @@ func main() {
 		port = "8080"
 	}
 	fmt.Printf("Starting auth_service on port %s...\n", port)
-	if err := http.ListenAndServe(":"+port, router); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+	
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: router,
 	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal for graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exiting")
 }
 
 type RedisTokenBlacklister struct {
