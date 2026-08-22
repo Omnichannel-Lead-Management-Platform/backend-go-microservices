@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -22,11 +23,21 @@ func (j *JWTClientState) Get(key string) (string, bool) {
 	return val, ok
 }
 
-// JWTReadWriter implements authboss.ClientStateReadWriter
-type JWTReadWriter struct{}
+// TokenBlacklister defines the interface for blacklisting JWT tokens
+type TokenBlacklister interface {
+	Blacklist(ctx context.Context, token string, expiration time.Duration) error
+	IsBlacklisted(ctx context.Context, token string) bool
+}
 
-func NewJWTReadWriter() *JWTReadWriter {
-	return &JWTReadWriter{}
+// JWTReadWriter implements authboss.ClientStateReadWriter
+type JWTReadWriter struct {
+	blacklister TokenBlacklister
+}
+
+func NewJWTReadWriter(b TokenBlacklister) *JWTReadWriter {
+	return &JWTReadWriter{
+		blacklister: b,
+	}
 }
 
 // ReadState reads the JWT from the Authorization header
@@ -49,6 +60,11 @@ func (j *JWTReadWriter) ReadState(r *http.Request) (authboss.ClientState, error)
 
 	if err != nil || !token.Valid {
 		return state, nil
+	}
+
+	// Check if token is blacklisted
+	if j.blacklister != nil && j.blacklister.IsBlacklisted(r.Context(), tokenString) {
+		return state, nil // Treat as logged out
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok {

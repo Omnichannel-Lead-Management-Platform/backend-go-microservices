@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 
 	"github.com/aarondl/authboss/v3"
 	"github.com/aarondl/authboss/v3/defaults"
@@ -85,9 +88,19 @@ func main() {
 	ab.Config.Modules.LogoutMethod = "POST"
 	ab.Config.Modules.RecoverLoginAfterRecovery = true
 	ab.Config.Modules.RegisterPreserveFields = []string{"name", "company_name", "invite_token"}
+	// Initialize Redis
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "localhost:6379"
+	}
+	rdb := redis.NewClient(&redis.Options{
+		Addr: redisURL,
+	})
+	blacklister := &RedisTokenBlacklister{client: rdb}
+
 	ab.Config.Storage.Server = auth.NewServerStorer(querier)
-	ab.Config.Storage.SessionState = auth.NewJWTReadWriter()
-	ab.Config.Storage.CookieState = auth.NewJWTReadWriter()
+	ab.Config.Storage.SessionState = auth.NewJWTReadWriter(blacklister)
+	ab.Config.Storage.CookieState = auth.NewJWTReadWriter(blacklister)
 
 	if err := ab.Init(); err != nil {
 		log.Fatalf("Authboss init failed: %v", err)
@@ -115,6 +128,17 @@ func main() {
 	}
 	ab.Events.After(authboss.EventLogin, injectSessionClaims)
 	ab.Events.After(authboss.EventRegister, injectSessionClaims)
+
+	// Blacklist JWT on logout
+	ab.Events.After(authboss.EventLogout, func(w http.ResponseWriter, r *http.Request, handled bool) (bool, error) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+			// We blacklist it for 24 hours (the max TTL of our JWTs)
+			blacklister.Blacklist(r.Context(), tokenString, 24*time.Hour)
+		}
+		return false, nil
+	})
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)

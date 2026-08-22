@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -10,7 +11,7 @@ import (
 )
 
 func TestJWTReadWriter_WriteState(t *testing.T) {
-	rw := NewJWTReadWriter()
+	rw := NewJWTReadWriter(nil)
 	w := httptest.NewRecorder()
 
 	state := &JWTClientState{data: make(map[string]string)}
@@ -44,7 +45,7 @@ func TestJWTReadWriter_WriteState(t *testing.T) {
 }
 
 func TestJWTReadWriter_ReadState(t *testing.T) {
-	rw := NewJWTReadWriter()
+	rw := NewJWTReadWriter(nil)
 	
 	// Create a valid token
 	claims := jwt.MapClaims{
@@ -69,7 +70,7 @@ func TestJWTReadWriter_ReadState(t *testing.T) {
 }
 
 func TestJWTReadWriter_ReadState_Invalid(t *testing.T) {
-	rw := NewJWTReadWriter()
+	rw := NewJWTReadWriter(nil)
 	
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer invalid.token.here")
@@ -84,3 +85,40 @@ func TestJWTReadWriter_ReadState_Invalid(t *testing.T) {
 		t.Error("expected empty state for invalid token")
 	}
 }
+
+type mockTokenBlacklister struct {
+	blacklisted bool
+}
+
+func (m *mockTokenBlacklister) Blacklist(ctx context.Context, token string, expiration time.Duration) error {
+	return nil
+}
+
+func (m *mockTokenBlacklister) IsBlacklisted(ctx context.Context, token string) bool {
+	return m.blacklisted
+}
+
+func TestJWTReadWriter_ReadState_Blacklisted(t *testing.T) {
+	rw := NewJWTReadWriter(&mockTokenBlacklister{blacklisted: true})
+	
+	claims := jwt.MapClaims{
+		"sess": map[string]string{"uid": "testuser@example.com"},
+		"exp":  time.Now().Add(time.Hour).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, _ := token.SignedString(JWTSecret)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenString)
+
+	state, err := rw.ReadState(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	_, ok := state.Get("uid")
+	if ok {
+		t.Error("expected empty state for blacklisted token")
+	}
+}
+
