@@ -10,10 +10,31 @@ import (
 	"github.com/google/uuid"
 )
 
+type Permission struct {
+	ID          uuid.UUID      `json:"id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	CreatedAt   sql.NullTime   `json:"created_at"`
+}
+
+type Role struct {
+	ID          uuid.UUID      `json:"id"`
+	WorkspaceID uuid.UUID      `json:"workspace_id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	IsSystem    bool           `json:"is_system"`
+	CreatedAt   sql.NullTime   `json:"created_at"`
+	UpdatedAt   sql.NullTime   `json:"updated_at"`
+}
+
+type RolePermission struct {
+	RoleID       uuid.UUID `json:"role_id"`
+	PermissionID uuid.UUID `json:"permission_id"`
+}
+
 type User struct {
 	ID                 uuid.UUID      `json:"id"`
 	WorkspaceID        uuid.UUID      `json:"workspace_id"`
-	Role               string         `json:"role"`
 	Name               string         `json:"name"`
 	Email              string         `json:"email"`
 	Password           sql.NullString `json:"password"`
@@ -24,6 +45,7 @@ type User struct {
 	RecoverToken       sql.NullString `json:"recover_token"`
 	RecoverTokenExpiry sql.NullTime   `json:"recover_token_expiry"`
 	ConfirmToken       sql.NullString `json:"confirm_token"`
+	RoleID             uuid.NullUUID  `json:"role_id"`
 }
 
 type Workspace struct {

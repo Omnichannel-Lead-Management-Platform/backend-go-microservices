@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
-	"github.com/google/uuid"
 	"github.com/aarondl/authboss/v3"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 
 	"github.com/omnichannel/auth_service/internal/db"
 )
@@ -15,7 +18,8 @@ import (
 // User represents the Authboss User
 type User struct {
 	db.User
-	Arbitrary map[string]string
+	Arbitrary   map[string]string
+	Permissions []string
 }
 
 func (u *User) GetArbitrary() map[string]string {
@@ -40,15 +44,43 @@ func (u *User) PutPassword(password string) {
 	u.Password = sql.NullString{String: password, Valid: true}
 }
 
-func (u *User) GetRecoverToken() string {
+func (u *User) GetEmail() string {
+	return u.Email
+}
+
+func (u *User) PutEmail(email string) {
+	u.Email = email
+}
+
+func (u *User) GetRecoverSelector() string {
 	if u.RecoverToken.Valid {
+		// In a real implementation with split tokens, this would be a selector column
 		return u.RecoverToken.String
 	}
 	return ""
 }
 
-func (u *User) PutRecoverToken(token string) {
-	u.RecoverToken = sql.NullString{String: token, Valid: true}
+func (u *User) PutRecoverSelector(selector string) {
+	u.RecoverToken = sql.NullString{String: selector, Valid: true}
+}
+
+func (u *User) GetRecoverVerifier() string {
+	return u.GetRecoverSelector() // For simplicity if using a single token
+}
+
+func (u *User) PutRecoverVerifier(verifier string) {
+	// Not storing verifier separately in this simple implementation
+}
+
+func (u *User) GetRecoverExpiry() time.Time {
+	if u.RecoverTokenExpiry.Valid {
+		return u.RecoverTokenExpiry.Time
+	}
+	return time.Time{}
+}
+
+func (u *User) PutRecoverExpiry(expiry time.Time) {
+	u.RecoverTokenExpiry = sql.NullTime{Time: expiry, Valid: true}
 }
 
 // ServerStorer implements authboss.ServerStorer
@@ -68,7 +100,14 @@ func (s *ServerStorer) Load(ctx context.Context, key string) (authboss.User, err
 		}
 		return nil, err
 	}
-	return &User{User: user}, nil
+	
+	// Fetch permissions
+	perms, err := s.db.GetUserPermissions(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &User{User: user, Permissions: perms}, nil
 }
 
 func (s *ServerStorer) Save(ctx context.Context, user authboss.User) error {
@@ -123,15 +162,108 @@ func (s *ServerStorer) Create(ctx context.Context, user authboss.User) error {
 		}
 	}
 
-	// Create workspace first
-	createdWorkspace, err := s.db.CreateWorkspace(ctx, companyName)
-	if err != nil {
-		return err
+	var workspaceID uuid.UUID
+	var roleID uuid.UUID
+
+	if u.Arbitrary != nil && u.Arbitrary["invite_token"] != "" {
+		tokenStr := u.Arbitrary["invite_token"]
+		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method")
+			}
+			return JWTSecret, nil
+		})
+
+		if err != nil || !token.Valid {
+			return errors.New("invalid or expired invite token")
+		}
+
+		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			if wsIDStr, ok := claims["workspace_id"].(string); ok {
+				workspaceID, err = uuid.Parse(wsIDStr)
+			}
+		}
+
+		if workspaceID == uuid.Nil {
+			return errors.New("invalid workspace ID in invite token")
+		}
+
+		// Find the Agent role for this workspace
+		agentRole, err := s.db.GetRoleByName(ctx, db.GetRoleByNameParams{
+			WorkspaceID: workspaceID,
+			Name:        "Agent",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to find agent role for workspace: %v", err)
+		}
+		roleID = agentRole.ID
+	} else {
+		// Create workspace first since no invite token was provided
+		createdWorkspace, err := s.db.CreateWorkspace(ctx, companyName)
+		if err != nil {
+			return err
+		}
+		workspaceID = createdWorkspace.ID
+
+		// Create default Admin role
+		adminRole, err := s.db.CreateRole(ctx, db.CreateRoleParams{
+			WorkspaceID: workspaceID,
+			Name:        "Admin",
+			Description: sql.NullString{String: "Full administrative access", Valid: true},
+			IsSystem:    true,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create default Agent role
+		agentRole, err := s.db.CreateRole(ctx, db.CreateRoleParams{
+			WorkspaceID: workspaceID,
+			Name:        "Agent",
+			Description: sql.NullString{String: "Standard agent access", Valid: true},
+			IsSystem:    true,
+		})
+		if err != nil {
+			return err
+		}
+
+		roleID = adminRole.ID // First user is Admin
+
+		// Assign all predefined permissions to Admin
+		allPerms := []string{
+			"workspace:manage", "users:manage", "roles:manage",
+			"leads:read", "leads:write", "leads:delete",
+			"messages:read", "messages:write",
+		}
+		for _, p := range allPerms {
+			perm, err := s.db.GetPermissionByName(ctx, p)
+			if err == nil {
+				s.db.AssignPermissionToRole(ctx, db.AssignPermissionToRoleParams{
+					RoleID:       adminRole.ID,
+					PermissionID: perm.ID,
+				})
+			}
+		}
+
+		// Assign agent permissions
+		agentPerms := []string{
+			"leads:read", "leads:write",
+			"messages:read", "messages:write",
+		}
+		for _, p := range agentPerms {
+			perm, err := s.db.GetPermissionByName(ctx, p)
+			if err == nil {
+				s.db.AssignPermissionToRole(ctx, db.AssignPermissionToRoleParams{
+					RoleID:       agentRole.ID,
+					PermissionID: perm.ID,
+				})
+			}
+		}
 	}
 
 	arg := db.CreateUserParams{
-		WorkspaceID:   createdWorkspace.ID, 
-		Role:          "admin", // First user of a workspace is an admin
+		WorkspaceID:   workspaceID, 
+		RoleID:        uuid.NullUUID{UUID: roleID, Valid: true},
 		Name:          userName,
 		Email:         u.Email,
 		Password:      u.Password,
@@ -146,5 +278,10 @@ func (s *ServerStorer) Create(ctx context.Context, user authboss.User) error {
 		return err
 	}
 	u.ID = createdUser.ID
+	
+	// Fetch assigned permissions to populate the object
+	perms, _ := s.db.GetUserPermissions(ctx, u.ID)
+	u.Permissions = perms
+
 	return nil
 }

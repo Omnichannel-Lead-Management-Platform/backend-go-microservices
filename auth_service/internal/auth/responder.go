@@ -57,6 +57,12 @@ func (a *APIResponder) Respond(w http.ResponseWriter, r *http.Request, code int,
 
 	// We can safely return a simple map
 	responseData := map[string]interface{}{}
+	
+	// If the JWTReadWriter generated a token, extract it and include it in the JSON body
+	if token := w.Header().Get("X-Access-Token"); token != "" {
+		responseData["token"] = token
+	}
+
 	api.Success(w, responseData, successMsg)
 	return nil
 }
@@ -71,6 +77,11 @@ func (a *APIResponder) Redirect(w http.ResponseWriter, r *http.Request, ro authb
 	}
 	
 	responseData := map[string]interface{}{}
+	
+	if token := w.Header().Get("X-Access-Token"); token != "" {
+		responseData["token"] = token
+	}
+
 	api.Success(w, responseData, successMsg)
 	return nil
 }

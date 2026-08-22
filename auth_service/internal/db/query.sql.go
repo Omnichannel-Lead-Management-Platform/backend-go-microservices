@@ -12,15 +12,64 @@ import (
 	"github.com/google/uuid"
 )
 
+const assignPermissionToRole = `-- name: AssignPermissionToRole :exec
+INSERT INTO role_permissions (role_id, permission_id)
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING
+`
+
+type AssignPermissionToRoleParams struct {
+	RoleID       uuid.UUID `json:"role_id"`
+	PermissionID uuid.UUID `json:"permission_id"`
+}
+
+func (q *Queries) AssignPermissionToRole(ctx context.Context, arg AssignPermissionToRoleParams) error {
+	_, err := q.db.ExecContext(ctx, assignPermissionToRole, arg.RoleID, arg.PermissionID)
+	return err
+}
+
+const createRole = `-- name: CreateRole :one
+INSERT INTO roles (workspace_id, name, description, is_system)
+VALUES ($1, $2, $3, $4)
+RETURNING id, workspace_id, name, description, is_system, created_at, updated_at
+`
+
+type CreateRoleParams struct {
+	WorkspaceID uuid.UUID      `json:"workspace_id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	IsSystem    bool           `json:"is_system"`
+}
+
+func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error) {
+	row := q.db.QueryRowContext(ctx, createRole,
+		arg.WorkspaceID,
+		arg.Name,
+		arg.Description,
+		arg.IsSystem,
+	)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Description,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (workspace_id, role, name, email, password, "emailVerified")
+INSERT INTO users (workspace_id, role_id, name, email, password, "emailVerified")
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token
+RETURNING id, workspace_id, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token, role_id
 `
 
 type CreateUserParams struct {
 	WorkspaceID   uuid.UUID      `json:"workspace_id"`
-	Role          string         `json:"role"`
+	RoleID        uuid.NullUUID  `json:"role_id"`
 	Name          string         `json:"name"`
 	Email         string         `json:"email"`
 	Password      sql.NullString `json:"password"`
@@ -30,7 +79,7 @@ type CreateUserParams struct {
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRowContext(ctx, createUser,
 		arg.WorkspaceID,
-		arg.Role,
+		arg.RoleID,
 		arg.Name,
 		arg.Email,
 		arg.Password,
@@ -40,7 +89,6 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.Role,
 		&i.Name,
 		&i.Email,
 		&i.Password,
@@ -51,6 +99,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.RecoverToken,
 		&i.RecoverTokenExpiry,
 		&i.ConfirmToken,
+		&i.RoleID,
 	)
 	return i, err
 }
@@ -73,8 +122,86 @@ func (q *Queries) CreateWorkspace(ctx context.Context, name string) (Workspace, 
 	return i, err
 }
 
+const getPermissionByName = `-- name: GetPermissionByName :one
+SELECT id, name, description, created_at FROM permissions
+WHERE name = $1 LIMIT 1
+`
+
+func (q *Queries) GetPermissionByName(ctx context.Context, name string) (Permission, error) {
+	row := q.db.QueryRowContext(ctx, getPermissionByName, name)
+	var i Permission
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRoleByName = `-- name: GetRoleByName :one
+SELECT id, workspace_id, name, description, is_system, created_at, updated_at FROM roles
+WHERE workspace_id = $1 AND name = $2 LIMIT 1
+`
+
+type GetRoleByNameParams struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	Name        string    `json:"name"`
+}
+
+func (q *Queries) GetRoleByName(ctx context.Context, arg GetRoleByNameParams) (Role, error) {
+	row := q.db.QueryRowContext(ctx, getRoleByName, arg.WorkspaceID, arg.Name)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Description,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getRolesByWorkspaceID = `-- name: GetRolesByWorkspaceID :many
+SELECT id, workspace_id, name, description, is_system, created_at, updated_at FROM roles
+WHERE workspace_id = $1
+`
+
+func (q *Queries) GetRolesByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) ([]Role, error) {
+	rows, err := q.db.QueryContext(ctx, getRolesByWorkspaceID, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Role
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Description,
+			&i.IsSystem,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token FROM users
+SELECT id, workspace_id, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token, role_id FROM users
 WHERE email = $1 LIMIT 1
 `
 
@@ -84,7 +211,6 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.Role,
 		&i.Name,
 		&i.Email,
 		&i.Password,
@@ -95,12 +221,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.RecoverToken,
 		&i.RecoverTokenExpiry,
 		&i.ConfirmToken,
+		&i.RoleID,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token FROM users
+SELECT id, workspace_id, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token, role_id FROM users
 WHERE id = $1 LIMIT 1
 `
 
@@ -110,7 +237,6 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.Role,
 		&i.Name,
 		&i.Email,
 		&i.Password,
@@ -121,8 +247,92 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.RecoverToken,
 		&i.RecoverTokenExpiry,
 		&i.ConfirmToken,
+		&i.RoleID,
 	)
 	return i, err
+}
+
+const getUserPermissions = `-- name: GetUserPermissions :many
+SELECT p.name 
+FROM users u
+JOIN roles r ON u.role_id = r.id
+JOIN role_permissions rp ON r.id = rp.role_id
+JOIN permissions p ON rp.permission_id = p.id
+WHERE u.id = $1
+`
+
+func (q *Queries) GetUserPermissions(ctx context.Context, id uuid.UUID) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getUserPermissions, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUsersByWorkspaceID = `-- name: GetUsersByWorkspaceID :many
+SELECT id, workspace_id, role_id, name, email, "emailVerified", image, "createdAt", "updatedAt"
+FROM users
+WHERE workspace_id = $1
+`
+
+type GetUsersByWorkspaceIDRow struct {
+	ID            uuid.UUID      `json:"id"`
+	WorkspaceID   uuid.UUID      `json:"workspace_id"`
+	RoleID        uuid.NullUUID  `json:"role_id"`
+	Name          string         `json:"name"`
+	Email         string         `json:"email"`
+	EmailVerified bool           `json:"emailVerified"`
+	Image         sql.NullString `json:"image"`
+	CreatedAt     sql.NullTime   `json:"createdAt"`
+	UpdatedAt     sql.NullTime   `json:"updatedAt"`
+}
+
+func (q *Queries) GetUsersByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) ([]GetUsersByWorkspaceIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUsersByWorkspaceID, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUsersByWorkspaceIDRow
+	for rows.Next() {
+		var i GetUsersByWorkspaceIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.RoleID,
+			&i.Name,
+			&i.Email,
+			&i.EmailVerified,
+			&i.Image,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getWorkspaceByID = `-- name: GetWorkspaceByID :one
@@ -146,7 +356,7 @@ const updateUserPassword = `-- name: UpdateUserPassword :one
 UPDATE users
 SET password = $2
 WHERE id = $1
-RETURNING id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token
+RETURNING id, workspace_id, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token, role_id
 `
 
 type UpdateUserPasswordParams struct {
@@ -160,7 +370,6 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.Role,
 		&i.Name,
 		&i.Email,
 		&i.Password,
@@ -171,15 +380,33 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 		&i.RecoverToken,
 		&i.RecoverTokenExpiry,
 		&i.ConfirmToken,
+		&i.RoleID,
 	)
 	return i, err
+}
+
+const updateUserRole = `-- name: UpdateUserRole :exec
+UPDATE users
+SET role_id = $2
+WHERE id = $1 AND workspace_id = $3
+`
+
+type UpdateUserRoleParams struct {
+	ID          uuid.UUID     `json:"id"`
+	RoleID      uuid.NullUUID `json:"role_id"`
+	WorkspaceID uuid.UUID     `json:"workspace_id"`
+}
+
+func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserRole, arg.ID, arg.RoleID, arg.WorkspaceID)
+	return err
 }
 
 const updateUserTokens = `-- name: UpdateUserTokens :one
 UPDATE users 
 SET recover_token = $2, recover_token_expiry = $3, confirm_token = $4
 WHERE id = $1
-RETURNING id, workspace_id, role, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token
+RETURNING id, workspace_id, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token, role_id
 `
 
 type UpdateUserTokensParams struct {
@@ -200,7 +427,6 @@ func (q *Queries) UpdateUserTokens(ctx context.Context, arg UpdateUserTokensPara
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.Role,
 		&i.Name,
 		&i.Email,
 		&i.Password,
@@ -211,6 +437,7 @@ func (q *Queries) UpdateUserTokens(ctx context.Context, arg UpdateUserTokensPara
 		&i.RecoverToken,
 		&i.RecoverTokenExpiry,
 		&i.ConfirmToken,
+		&i.RoleID,
 	)
 	return i, err
 }

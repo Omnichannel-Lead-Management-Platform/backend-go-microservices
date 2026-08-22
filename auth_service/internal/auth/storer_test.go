@@ -1,0 +1,232 @@
+package auth
+
+import (
+	"context"
+	"database/sql"
+	"testing"
+	"time"
+
+	"github.com/aarondl/authboss/v3"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/omnichannel/auth_service/internal/db"
+)
+
+// mockQuerier implements db.Querier manually by embedding it and overriding what we need.
+type mockQuerier struct {
+	db.Querier
+	mockGetUserByEmail func(ctx context.Context, email string) (db.User, error)
+	mockCreateWorkspace func(ctx context.Context, name string) (db.Workspace, error)
+	mockCreateUser func(ctx context.Context, arg db.CreateUserParams) (db.User, error)
+	mockGetUserPermissions func(ctx context.Context, id uuid.UUID) ([]string, error)
+	mockCreateRole func(ctx context.Context, arg db.CreateRoleParams) (db.Role, error)
+	mockGetRoleByName func(ctx context.Context, arg db.GetRoleByNameParams) (db.Role, error)
+	mockGetPermissionByName func(ctx context.Context, name string) (db.Permission, error)
+	mockAssignPermissionToRole func(ctx context.Context, arg db.AssignPermissionToRoleParams) error
+	mockGetRolesByWorkspaceID func(ctx context.Context, workspaceID uuid.UUID) ([]db.Role, error)
+	mockGetUsersByWorkspaceID func(ctx context.Context, workspaceID uuid.UUID) ([]db.GetUsersByWorkspaceIDRow, error)
+	mockUpdateUserRole func(ctx context.Context, arg db.UpdateUserRoleParams) error
+}
+
+func (m *mockQuerier) GetUserByEmail(ctx context.Context, email string) (db.User, error) {
+	if m.mockGetUserByEmail != nil {
+		return m.mockGetUserByEmail(ctx, email)
+	}
+	return db.User{}, sql.ErrNoRows
+}
+
+func (m *mockQuerier) CreateWorkspace(ctx context.Context, name string) (db.Workspace, error) {
+	if m.mockCreateWorkspace != nil {
+		return m.mockCreateWorkspace(ctx, name)
+	}
+	return db.Workspace{}, nil
+}
+
+func (m *mockQuerier) CreateUser(ctx context.Context, arg db.CreateUserParams) (db.User, error) {
+	if m.mockCreateUser != nil {
+		return m.mockCreateUser(ctx, arg)
+	}
+	return db.User{}, nil
+}
+
+func (m *mockQuerier) GetUserPermissions(ctx context.Context, id uuid.UUID) ([]string, error) {
+	if m.mockGetUserPermissions != nil {
+		return m.mockGetUserPermissions(ctx, id)
+	}
+	return []string{}, nil
+}
+
+func (m *mockQuerier) CreateRole(ctx context.Context, arg db.CreateRoleParams) (db.Role, error) {
+	if m.mockCreateRole != nil {
+		return m.mockCreateRole(ctx, arg)
+	}
+	return db.Role{ID: uuid.New()}, nil
+}
+
+func (m *mockQuerier) GetRoleByName(ctx context.Context, arg db.GetRoleByNameParams) (db.Role, error) {
+	if m.mockGetRoleByName != nil {
+		return m.mockGetRoleByName(ctx, arg)
+	}
+	return db.Role{ID: uuid.New()}, nil
+}
+
+func (m *mockQuerier) GetPermissionByName(ctx context.Context, name string) (db.Permission, error) {
+	if m.mockGetPermissionByName != nil {
+		return m.mockGetPermissionByName(ctx, name)
+	}
+	return db.Permission{ID: uuid.New()}, nil
+}
+
+func (m *mockQuerier) AssignPermissionToRole(ctx context.Context, arg db.AssignPermissionToRoleParams) error {
+	if m.mockAssignPermissionToRole != nil {
+		return m.mockAssignPermissionToRole(ctx, arg)
+	}
+	return nil
+}
+
+func (m *mockQuerier) GetRolesByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) ([]db.Role, error) {
+	if m.mockGetRolesByWorkspaceID != nil {
+		return m.mockGetRolesByWorkspaceID(ctx, workspaceID)
+	}
+	return []db.Role{}, nil
+}
+
+func (m *mockQuerier) GetUsersByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) ([]db.GetUsersByWorkspaceIDRow, error) {
+	if m.mockGetUsersByWorkspaceID != nil {
+		return m.mockGetUsersByWorkspaceID(ctx, workspaceID)
+	}
+	return []db.GetUsersByWorkspaceIDRow{}, nil
+}
+
+func (m *mockQuerier) UpdateUserRole(ctx context.Context, arg db.UpdateUserRoleParams) error {
+	if m.mockUpdateUserRole != nil {
+		return m.mockUpdateUserRole(ctx, arg)
+	}
+	return nil
+}
+
+func TestServerStorer_Load(t *testing.T) {
+	mockDB := &mockQuerier{
+		mockGetUserByEmail: func(ctx context.Context, email string) (db.User, error) {
+			if email == "test@example.com" {
+				return db.User{
+					ID:       uuid.MustParse("00000000-0000-0000-0000-000000000123"),
+					Email:    "test@example.com",
+					Password: sql.NullString{String: "hashed-pw", Valid: true},
+				}, nil
+			}
+			return db.User{}, sql.ErrNoRows
+		},
+	}
+
+	storer := NewServerStorer(mockDB)
+
+	user, err := storer.Load(context.Background(), "test@example.com")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	authbossUser := user.(*User)
+	if authbossUser.Email != "test@example.com" {
+		t.Errorf("expected test@example.com, got %s", authbossUser.Email)
+	}
+
+	_, err = storer.Load(context.Background(), "unknown@example.com")
+	if err != authboss.ErrUserNotFound {
+		t.Errorf("expected ErrUserNotFound, got %v", err)
+	}
+}
+
+func TestServerStorer_Create_AdminNoInvite(t *testing.T) {
+	var workspaceCreated bool
+	var userCreated db.CreateUserParams
+
+	wsid := uuid.MustParse("00000000-0000-0000-0000-000000000789")
+	uid := uuid.MustParse("00000000-0000-0000-0000-000000000111")
+	
+	mockDB := &mockQuerier{
+		mockCreateWorkspace: func(ctx context.Context, name string) (db.Workspace, error) {
+			workspaceCreated = true
+			return db.Workspace{ID: wsid}, nil
+		},
+		mockCreateUser: func(ctx context.Context, arg db.CreateUserParams) (db.User, error) {
+			userCreated = arg
+			return db.User{ID: uid}, nil
+		},
+	}
+
+	storer := NewServerStorer(mockDB)
+
+	user := &User{
+		User: db.User{
+			Email: "admin@example.com",
+			Name: "Admin User",
+			Password: sql.NullString{String: "pw", Valid: true},
+		},
+		Arbitrary: map[string]string{"company_name": "Test Company"},
+	}
+
+	err := storer.Create(context.Background(), user)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !workspaceCreated {
+		t.Error("expected a new workspace to be created")
+	}
+
+	if !userCreated.RoleID.Valid {
+		t.Errorf("expected RoleID to be valid")
+	}
+	if userCreated.WorkspaceID != wsid {
+		t.Errorf("expected %v, got %v", wsid, userCreated.WorkspaceID)
+	}
+}
+
+func TestServerStorer_Create_AgentWithInvite(t *testing.T) {
+	var userCreated db.CreateUserParams
+
+	uid := uuid.MustParse("00000000-0000-0000-0000-000000000222")
+	mockDB := &mockQuerier{
+		mockCreateUser: func(ctx context.Context, arg db.CreateUserParams) (db.User, error) {
+			userCreated = arg
+			return db.User{ID: uid}, nil
+		},
+		mockCreateWorkspace: func(ctx context.Context, name string) (db.Workspace, error) {
+			t.Fatal("should not create workspace when registering via invite")
+			return db.Workspace{}, nil
+		},
+	}
+
+	storer := NewServerStorer(mockDB)
+
+	wsid := uuid.MustParse("00000000-0000-0000-0000-000000000333")
+	// Create valid invite token for wsid
+	claims := jwt.MapClaims{
+		"workspace_id": wsid.String(),
+		"exp":          time.Now().Add(time.Hour).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, _ := token.SignedString(JWTSecret)
+
+	user := &User{
+		User: db.User{
+			Email: "agent@example.com",
+			Name: "Agent User",
+			Password: sql.NullString{String: "pw", Valid: true},
+		},
+		Arbitrary: map[string]string{"invite_token": tokenString},
+	}
+
+	err := storer.Create(context.Background(), user)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !userCreated.RoleID.Valid {
+		t.Errorf("expected RoleID to be valid")
+	}
+	if userCreated.WorkspaceID != wsid {
+		t.Errorf("expected %v, got %v", wsid, userCreated.WorkspaceID)
+	}
+}
