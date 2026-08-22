@@ -263,3 +263,57 @@ func TestUpdateUserRoleHandler(t *testing.T) {
 	}
 }
 
+
+func TestIntrospectHandler(t *testing.T) {
+	ab := authboss.New()
+	ab.Config.Storage.SessionState = NewJWTReadWriter(nil)
+
+	// Valid token test
+	claims := jwt.MapClaims{
+		"sess": map[string]interface{}{
+			"uid":          "testuser@example.com",
+			"workspace_id": "ws1",
+			"role_id":      "r1",
+			"permissions":  "users:manage,roles:manage",
+		},
+		"exp": time.Now().Add(time.Hour).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, _ := token.SignedString(JWTSecret)
+
+	req := httptest.NewRequest("GET", "/api/auth/introspect", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenString)
+	w := httptest.NewRecorder()
+
+	handler := IntrospectHandler(ab)
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 OK, got %d", w.Code)
+	}
+
+	var resp IntrospectResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Active {
+		t.Error("expected Active to be true")
+	}
+	if resp.UserID != "testuser@example.com" {
+		t.Errorf("expected UserID testuser@example.com, got %s", resp.UserID)
+	}
+	if len(resp.Permissions) != 2 {
+		t.Errorf("expected 2 permissions, got %d", len(resp.Permissions))
+	}
+
+	// Invalid token test
+	reqInvalid := httptest.NewRequest("GET", "/api/auth/introspect", nil)
+	reqInvalid.Header.Set("Authorization", "Bearer badtoken")
+	wInvalid := httptest.NewRecorder()
+
+	handler.ServeHTTP(wInvalid, reqInvalid)
+
+	if wInvalid.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 Unauthorized for invalid token, got %d", wInvalid.Code)
+	}
+}

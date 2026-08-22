@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aarondl/authboss/v3"
@@ -183,3 +184,57 @@ func UpdateUserRoleHandler(ab *authboss.Authboss, querier db.Querier) http.Handl
 	}
 }
 
+
+
+// IntrospectResponse is the JSON payload returned by the introspection endpoint
+type IntrospectResponse struct {
+	Active      bool     `json:"active"`
+	UserID      string   `json:"user_id,omitempty"`
+	WorkspaceID string   `json:"workspace_id,omitempty"`
+	RoleID      string   `json:"role_id,omitempty"`
+	Permissions []string `json:"permissions,omitempty"`
+}
+
+// IntrospectHandler validates a JWT without hitting the database (purely based on JWT claims).
+// This is used by the API Gateway to authorize requests to other microservices.
+func IntrospectHandler(ab *authboss.Authboss) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Attempt to read the session state (this parses the JWT and checks the Redis blacklist)
+		state, err := ab.Storage.SessionState.ReadState(r)
+		if err != nil || state == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(IntrospectResponse{Active: false})
+			return
+		}
+
+		uid, hasUid := state.Get(authboss.SessionKey)
+		workspaceID, hasWorkspace := state.Get("workspace_id")
+		
+		if !hasUid || !hasWorkspace {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(IntrospectResponse{Active: false})
+			return
+		}
+
+		roleID, _ := state.Get("role_id")
+		permsStr, _ := state.Get("permissions")
+		
+		var perms []string
+		if permsStr != "" {
+			perms = strings.Split(permsStr, ",")
+		}
+
+		resp := IntrospectResponse{
+			Active:      true,
+			UserID:      uid,
+			WorkspaceID: workspaceID,
+			RoleID:      roleID,
+			Permissions: perms,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}
+}
