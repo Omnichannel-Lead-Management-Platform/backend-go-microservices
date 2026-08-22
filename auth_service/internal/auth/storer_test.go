@@ -18,6 +18,11 @@ type mockQuerier struct {
 	mockGetUserByEmail func(ctx context.Context, email string) (db.User, error)
 	mockCreateWorkspace func(ctx context.Context, name string) (db.Workspace, error)
 	mockCreateUser func(ctx context.Context, arg db.CreateUserParams) (db.User, error)
+	mockGetUserPermissions func(ctx context.Context, id uuid.UUID) ([]string, error)
+	mockCreateRole func(ctx context.Context, arg db.CreateRoleParams) (db.Role, error)
+	mockGetRoleByName func(ctx context.Context, arg db.GetRoleByNameParams) (db.Role, error)
+	mockGetPermissionByName func(ctx context.Context, name string) (db.Permission, error)
+	mockAssignPermissionToRole func(ctx context.Context, arg db.AssignPermissionToRoleParams) error
 }
 
 func (m *mockQuerier) GetUserByEmail(ctx context.Context, email string) (db.User, error) {
@@ -39,6 +44,41 @@ func (m *mockQuerier) CreateUser(ctx context.Context, arg db.CreateUserParams) (
 		return m.mockCreateUser(ctx, arg)
 	}
 	return db.User{}, nil
+}
+
+func (m *mockQuerier) GetUserPermissions(ctx context.Context, id uuid.UUID) ([]string, error) {
+	if m.mockGetUserPermissions != nil {
+		return m.mockGetUserPermissions(ctx, id)
+	}
+	return []string{}, nil
+}
+
+func (m *mockQuerier) CreateRole(ctx context.Context, arg db.CreateRoleParams) (db.Role, error) {
+	if m.mockCreateRole != nil {
+		return m.mockCreateRole(ctx, arg)
+	}
+	return db.Role{ID: uuid.New()}, nil
+}
+
+func (m *mockQuerier) GetRoleByName(ctx context.Context, arg db.GetRoleByNameParams) (db.Role, error) {
+	if m.mockGetRoleByName != nil {
+		return m.mockGetRoleByName(ctx, arg)
+	}
+	return db.Role{ID: uuid.New()}, nil
+}
+
+func (m *mockQuerier) GetPermissionByName(ctx context.Context, name string) (db.Permission, error) {
+	if m.mockGetPermissionByName != nil {
+		return m.mockGetPermissionByName(ctx, name)
+	}
+	return db.Permission{ID: uuid.New()}, nil
+}
+
+func (m *mockQuerier) AssignPermissionToRole(ctx context.Context, arg db.AssignPermissionToRoleParams) error {
+	if m.mockAssignPermissionToRole != nil {
+		return m.mockAssignPermissionToRole(ctx, arg)
+	}
+	return nil
 }
 
 func TestServerStorer_Load(t *testing.T) {
@@ -111,8 +151,8 @@ func TestServerStorer_Create_AdminNoInvite(t *testing.T) {
 		t.Error("expected a new workspace to be created")
 	}
 
-	if userCreated.Role != "admin" {
-		t.Errorf("expected role admin, got %s", userCreated.Role)
+	if !userCreated.RoleID.Valid {
+		t.Errorf("expected RoleID to be valid")
 	}
 	if userCreated.WorkspaceID != wsid {
 		t.Errorf("expected %v, got %v", wsid, userCreated.WorkspaceID)
@@ -159,8 +199,8 @@ func TestServerStorer_Create_AgentWithInvite(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if userCreated.Role != "agent" {
-		t.Errorf("expected role agent, got %s", userCreated.Role)
+	if !userCreated.RoleID.Valid {
+		t.Errorf("expected RoleID to be valid")
 	}
 	if userCreated.WorkspaceID != wsid {
 		t.Errorf("expected %v, got %v", wsid, userCreated.WorkspaceID)

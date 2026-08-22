@@ -18,7 +18,8 @@ import (
 // User represents the Authboss User
 type User struct {
 	db.User
-	Arbitrary map[string]string
+	Arbitrary   map[string]string
+	Permissions []string
 }
 
 func (u *User) GetArbitrary() map[string]string {
@@ -99,7 +100,14 @@ func (s *ServerStorer) Load(ctx context.Context, key string) (authboss.User, err
 		}
 		return nil, err
 	}
-	return &User{User: user}, nil
+	
+	// Fetch permissions
+	perms, err := s.db.GetUserPermissions(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &User{User: user, Permissions: perms}, nil
 }
 
 func (s *ServerStorer) Save(ctx context.Context, user authboss.User) error {
@@ -155,7 +163,7 @@ func (s *ServerStorer) Create(ctx context.Context, user authboss.User) error {
 	}
 
 	var workspaceID uuid.UUID
-	var role = "admin" // Default to admin for new workspaces
+	var roleID uuid.UUID
 
 	if u.Arbitrary != nil && u.Arbitrary["invite_token"] != "" {
 		tokenStr := u.Arbitrary["invite_token"]
@@ -173,15 +181,22 @@ func (s *ServerStorer) Create(ctx context.Context, user authboss.User) error {
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
 			if wsIDStr, ok := claims["workspace_id"].(string); ok {
 				workspaceID, err = uuid.Parse(wsIDStr)
-				if err == nil {
-					role = "agent" // Invited users are agents
-				}
 			}
 		}
 
 		if workspaceID == uuid.Nil {
 			return errors.New("invalid workspace ID in invite token")
 		}
+
+		// Find the Agent role for this workspace
+		agentRole, err := s.db.GetRoleByName(ctx, db.GetRoleByNameParams{
+			WorkspaceID: workspaceID,
+			Name:        "Agent",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to find agent role for workspace: %v", err)
+		}
+		roleID = agentRole.ID
 	} else {
 		// Create workspace first since no invite token was provided
 		createdWorkspace, err := s.db.CreateWorkspace(ctx, companyName)
@@ -189,11 +204,66 @@ func (s *ServerStorer) Create(ctx context.Context, user authboss.User) error {
 			return err
 		}
 		workspaceID = createdWorkspace.ID
+
+		// Create default Admin role
+		adminRole, err := s.db.CreateRole(ctx, db.CreateRoleParams{
+			WorkspaceID: workspaceID,
+			Name:        "Admin",
+			Description: sql.NullString{String: "Full administrative access", Valid: true},
+			IsSystem:    true,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create default Agent role
+		agentRole, err := s.db.CreateRole(ctx, db.CreateRoleParams{
+			WorkspaceID: workspaceID,
+			Name:        "Agent",
+			Description: sql.NullString{String: "Standard agent access", Valid: true},
+			IsSystem:    true,
+		})
+		if err != nil {
+			return err
+		}
+
+		roleID = adminRole.ID // First user is Admin
+
+		// Assign all predefined permissions to Admin
+		allPerms := []string{
+			"workspace:manage", "users:manage", "roles:manage",
+			"leads:read", "leads:write", "leads:delete",
+			"messages:read", "messages:write",
+		}
+		for _, p := range allPerms {
+			perm, err := s.db.GetPermissionByName(ctx, p)
+			if err == nil {
+				s.db.AssignPermissionToRole(ctx, db.AssignPermissionToRoleParams{
+					RoleID:       adminRole.ID,
+					PermissionID: perm.ID,
+				})
+			}
+		}
+
+		// Assign agent permissions
+		agentPerms := []string{
+			"leads:read", "leads:write",
+			"messages:read", "messages:write",
+		}
+		for _, p := range agentPerms {
+			perm, err := s.db.GetPermissionByName(ctx, p)
+			if err == nil {
+				s.db.AssignPermissionToRole(ctx, db.AssignPermissionToRoleParams{
+					RoleID:       agentRole.ID,
+					PermissionID: perm.ID,
+				})
+			}
+		}
 	}
 
 	arg := db.CreateUserParams{
 		WorkspaceID:   workspaceID, 
-		Role:          role,
+		RoleID:        uuid.NullUUID{UUID: roleID, Valid: true},
 		Name:          userName,
 		Email:         u.Email,
 		Password:      u.Password,
@@ -208,5 +278,10 @@ func (s *ServerStorer) Create(ctx context.Context, user authboss.User) error {
 		return err
 	}
 	u.ID = createdUser.ID
+	
+	// Fetch assigned permissions to populate the object
+	perms, _ := s.db.GetUserPermissions(ctx, u.ID)
+	u.Permissions = perms
+
 	return nil
 }

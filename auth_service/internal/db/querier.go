@@ -11,10 +11,15 @@ import (
 )
 
 type Querier interface {
+	AssignPermissionToRole(ctx context.Context, arg AssignPermissionToRoleParams) error
+	CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWorkspace(ctx context.Context, name string) (Workspace, error)
+	GetPermissionByName(ctx context.Context, name string) (Permission, error)
+	GetRoleByName(ctx context.Context, arg GetRoleByNameParams) (Role, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	GetUserPermissions(ctx context.Context, id uuid.UUID) ([]string, error)
 	GetWorkspaceByID(ctx context.Context, id uuid.UUID) (Workspace, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (User, error)
 	UpdateUserTokens(ctx context.Context, arg UpdateUserTokensParams) (User, error)

@@ -7,8 +7,8 @@ import (
 	"github.com/omnichannel/common/api"
 )
 
-// RequireRole enforces that the authenticated user has one of the allowed roles
-func RequireRole(ab *authboss.Authboss, allowedRoles ...string) func(next http.Handler) http.Handler {
+// RequirePermission enforces that the authenticated user has at least one of the allowed permissions
+func RequirePermission(ab *authboss.Authboss, requiredPermissions ...string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user, err := ab.CurrentUser(r)
@@ -23,16 +23,21 @@ func RequireRole(ab *authboss.Authboss, allowedRoles ...string) func(next http.H
 				return
 			}
 
-			// Check if the user's role is in the list of allowed roles
-			hasRole := false
-			for _, role := range allowedRoles {
-				if u.Role == role {
-					hasRole = true
+			// Check if the user has at least one of the required permissions
+			hasPermission := false
+			for _, required := range requiredPermissions {
+				for _, perm := range u.Permissions {
+					if perm == required {
+						hasPermission = true
+						break
+					}
+				}
+				if hasPermission {
 					break
 				}
 			}
 
-			if !hasRole {
+			if !hasPermission {
 				api.Error(w, http.StatusForbidden, "Forbidden: insufficient permissions")
 				return
 			}

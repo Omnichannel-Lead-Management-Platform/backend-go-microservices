@@ -23,13 +23,14 @@ func MeHandler(ab *authboss.Authboss) http.HandlerFunc {
 			return
 		}
 
-		// u.User is our internal/db.User struct which contains Name, Role, WorkspaceID, Email, etc.
+		// u.User is our internal/db.User struct which contains Name, RoleID, WorkspaceID, Email, etc.
 		// We omit the password hash.
 		profile := map[string]interface{}{
 			"id":           u.ID,
 			"email":        u.Email,
 			"name":         u.Name,
-			"role":         u.Role,
+			"role_id":      u.RoleID.UUID,
+			"permissions":  u.Permissions,
 			"workspace_id": u.WorkspaceID,
 		}
 

@@ -26,9 +26,10 @@ func TestMeHandler(t *testing.T) {
 			ID:          uid,
 			Email:       "test@example.com",
 			Name:        "Test User",
-			Role:        "admin",
+			RoleID:      uuid.NullUUID{UUID: uuid.MustParse("22222222-2222-2222-2222-222222222222"), Valid: true},
 			WorkspaceID: wsid,
 		},
+		Permissions: []string{"leads:read"},
 	}
 
 	// Inject user into context
@@ -55,8 +56,14 @@ func TestMeHandler(t *testing.T) {
 	if data["email"] != "test@example.com" {
 		t.Errorf("expected test@example.com, got %v", data["email"])
 	}
-	if data["role"] != "admin" {
-		t.Errorf("expected admin, got %v", data["role"])
+	if data["role_id"] != "22222222-2222-2222-2222-222222222222" {
+		t.Errorf("expected role_id 22222222-2222-2222-2222-222222222222, got %v", data["role_id"])
+	}
+	
+	// Test permissions array in response
+	perms, ok := data["permissions"].([]interface{})
+	if !ok || len(perms) == 0 || perms[0] != "leads:read" {
+		t.Errorf("expected permissions [leads:read], got %v", data["permissions"])
 	}
 	if data["workspace_id"] != wsid.String() {
 		t.Errorf("expected %s, got %v", wsid.String(), data["workspace_id"])

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aarondl/authboss/v3"
@@ -96,6 +97,25 @@ func main() {
 	ab.Core.Responder = customResponder
 	ab.Core.Redirector = customResponder
 
+	// Inject User Permissions and Workspace info into the JWT Session upon Login/Registration
+	injectSessionClaims := func(w http.ResponseWriter, r *http.Request, handled bool) (bool, error) {
+		u, err := ab.CurrentUser(r)
+		if err == nil && u != nil {
+			if user, ok := u.(*auth.User); ok {
+				authboss.PutSession(w, "workspace_id", user.WorkspaceID.String())
+				if user.RoleID.Valid {
+					authboss.PutSession(w, "role_id", user.RoleID.UUID.String())
+				}
+				if len(user.Permissions) > 0 {
+					authboss.PutSession(w, "permissions", strings.Join(user.Permissions, ","))
+				}
+			}
+		}
+		return false, nil
+	}
+	ab.Events.After(authboss.EventLogin, injectSessionClaims)
+	ab.Events.After(authboss.EventRegister, injectSessionClaims)
+
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
 	
@@ -112,7 +132,7 @@ func main() {
 		
 		// Admin-only routes
 		r.Group(func(adminRoutes chi.Router) {
-			adminRoutes.Use(auth.RequireRole(ab, "admin"))
+			adminRoutes.Use(auth.RequirePermission(ab, "users:manage"))
 			adminRoutes.Post("/api/auth/invite", auth.GenerateInviteHandler(ab))
 		})
 	})

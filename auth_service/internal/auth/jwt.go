@@ -87,6 +87,13 @@ func (j *JWTReadWriter) WriteState(w http.ResponseWriter, state authboss.ClientS
 		"sess": jwtState.data,
 		"exp":  time.Now().Add(24 * time.Hour).Unix(),
 	}
+	
+	// If permissions are in session, hoist them to a top-level array for easier parsing by other services
+	if permsStr, ok := jwtState.data["permissions"]; ok {
+		claims["permissions"] = strings.Split(permsStr, ",")
+		// Optionally remove from sess to save space
+		// delete(jwtState.data, "permissions")
+	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(JWTSecret)
