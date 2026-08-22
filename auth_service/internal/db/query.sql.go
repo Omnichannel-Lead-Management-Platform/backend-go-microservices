@@ -164,6 +164,42 @@ func (q *Queries) GetRoleByName(ctx context.Context, arg GetRoleByNameParams) (R
 	return i, err
 }
 
+const getRolesByWorkspaceID = `-- name: GetRolesByWorkspaceID :many
+SELECT id, workspace_id, name, description, is_system, created_at, updated_at FROM roles
+WHERE workspace_id = $1
+`
+
+func (q *Queries) GetRolesByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) ([]Role, error) {
+	rows, err := q.db.QueryContext(ctx, getRolesByWorkspaceID, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Role
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Description,
+			&i.IsSystem,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, workspace_id, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token, role_id FROM users
 WHERE email = $1 LIMIT 1
@@ -248,6 +284,57 @@ func (q *Queries) GetUserPermissions(ctx context.Context, id uuid.UUID) ([]strin
 	return items, nil
 }
 
+const getUsersByWorkspaceID = `-- name: GetUsersByWorkspaceID :many
+SELECT id, workspace_id, role_id, name, email, "emailVerified", image, "createdAt", "updatedAt"
+FROM users
+WHERE workspace_id = $1
+`
+
+type GetUsersByWorkspaceIDRow struct {
+	ID            uuid.UUID      `json:"id"`
+	WorkspaceID   uuid.UUID      `json:"workspace_id"`
+	RoleID        uuid.NullUUID  `json:"role_id"`
+	Name          string         `json:"name"`
+	Email         string         `json:"email"`
+	EmailVerified bool           `json:"emailVerified"`
+	Image         sql.NullString `json:"image"`
+	CreatedAt     sql.NullTime   `json:"createdAt"`
+	UpdatedAt     sql.NullTime   `json:"updatedAt"`
+}
+
+func (q *Queries) GetUsersByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) ([]GetUsersByWorkspaceIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUsersByWorkspaceID, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUsersByWorkspaceIDRow
+	for rows.Next() {
+		var i GetUsersByWorkspaceIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.RoleID,
+			&i.Name,
+			&i.Email,
+			&i.EmailVerified,
+			&i.Image,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getWorkspaceByID = `-- name: GetWorkspaceByID :one
 SELECT id, name, created_at, updated_at FROM workspaces
 WHERE id = $1 LIMIT 1
@@ -296,6 +383,23 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 		&i.RoleID,
 	)
 	return i, err
+}
+
+const updateUserRole = `-- name: UpdateUserRole :exec
+UPDATE users
+SET role_id = $2
+WHERE id = $1 AND workspace_id = $3
+`
+
+type UpdateUserRoleParams struct {
+	ID          uuid.UUID     `json:"id"`
+	RoleID      uuid.NullUUID `json:"role_id"`
+	WorkspaceID uuid.UUID     `json:"workspace_id"`
+}
+
+func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserRole, arg.ID, arg.RoleID, arg.WorkspaceID)
+	return err
 }
 
 const updateUserTokens = `-- name: UpdateUserTokens :one

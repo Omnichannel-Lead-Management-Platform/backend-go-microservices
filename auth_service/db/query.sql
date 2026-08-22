@@ -58,3 +58,18 @@ ON CONFLICT DO NOTHING;
 SELECT * FROM permissions
 WHERE name = $1 LIMIT 1;
 
+
+-- name: GetUsersByWorkspaceID :many
+SELECT id, workspace_id, role_id, name, email, "emailVerified", image, "createdAt", "updatedAt"
+FROM users
+WHERE workspace_id = $1;
+
+-- name: UpdateUserRole :exec
+UPDATE users
+SET role_id = $2
+WHERE id = $1 AND workspace_id = $3;
+
+-- name: GetRolesByWorkspaceID :many
+SELECT * FROM roles
+WHERE workspace_id = $1;
+

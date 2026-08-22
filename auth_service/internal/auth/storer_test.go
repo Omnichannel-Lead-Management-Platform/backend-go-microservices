@@ -23,6 +23,9 @@ type mockQuerier struct {
 	mockGetRoleByName func(ctx context.Context, arg db.GetRoleByNameParams) (db.Role, error)
 	mockGetPermissionByName func(ctx context.Context, name string) (db.Permission, error)
 	mockAssignPermissionToRole func(ctx context.Context, arg db.AssignPermissionToRoleParams) error
+	mockGetRolesByWorkspaceID func(ctx context.Context, workspaceID uuid.UUID) ([]db.Role, error)
+	mockGetUsersByWorkspaceID func(ctx context.Context, workspaceID uuid.UUID) ([]db.GetUsersByWorkspaceIDRow, error)
+	mockUpdateUserRole func(ctx context.Context, arg db.UpdateUserRoleParams) error
 }
 
 func (m *mockQuerier) GetUserByEmail(ctx context.Context, email string) (db.User, error) {
@@ -77,6 +80,27 @@ func (m *mockQuerier) GetPermissionByName(ctx context.Context, name string) (db.
 func (m *mockQuerier) AssignPermissionToRole(ctx context.Context, arg db.AssignPermissionToRoleParams) error {
 	if m.mockAssignPermissionToRole != nil {
 		return m.mockAssignPermissionToRole(ctx, arg)
+	}
+	return nil
+}
+
+func (m *mockQuerier) GetRolesByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) ([]db.Role, error) {
+	if m.mockGetRolesByWorkspaceID != nil {
+		return m.mockGetRolesByWorkspaceID(ctx, workspaceID)
+	}
+	return []db.Role{}, nil
+}
+
+func (m *mockQuerier) GetUsersByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) ([]db.GetUsersByWorkspaceIDRow, error) {
+	if m.mockGetUsersByWorkspaceID != nil {
+		return m.mockGetUsersByWorkspaceID(ctx, workspaceID)
+	}
+	return []db.GetUsersByWorkspaceIDRow{}, nil
+}
+
+func (m *mockQuerier) UpdateUserRole(ctx context.Context, arg db.UpdateUserRoleParams) error {
+	if m.mockUpdateUserRole != nil {
+		return m.mockUpdateUserRole(ctx, arg)
 	}
 	return nil
 }

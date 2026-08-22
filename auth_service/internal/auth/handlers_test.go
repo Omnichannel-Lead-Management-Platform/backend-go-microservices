@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aarondl/authboss/v3"
+	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/omnichannel/auth_service/internal/db"
@@ -131,3 +133,133 @@ func TestGenerateInviteHandler(t *testing.T) {
 		t.Errorf("expected exp around %d, got %v", expectedExp, exp)
 	}
 }
+
+func TestCreateRoleHandler(t *testing.T) {
+	ab := authboss.New()
+	wsid := uuid.MustParse("00000000-0000-0000-0000-000000000555")
+	
+	mockDB := &mockQuerier{
+		mockCreateRole: func(ctx context.Context, arg db.CreateRoleParams) (db.Role, error) {
+			if arg.WorkspaceID != wsid {
+				t.Errorf("expected workspace id %v, got %v", wsid, arg.WorkspaceID)
+			}
+			return db.Role{ID: uuid.New(), Name: arg.Name, WorkspaceID: arg.WorkspaceID}, nil
+		},
+		mockGetPermissionByName: func(ctx context.Context, name string) (db.Permission, error) {
+			return db.Permission{ID: uuid.New(), Name: name}, nil
+		},
+		mockAssignPermissionToRole: func(ctx context.Context, arg db.AssignPermissionToRoleParams) error {
+			return nil
+		},
+	}
+
+	handler := CreateRoleHandler(ab, mockDB)
+
+	user := &User{
+		User: db.User{
+			ID:          uuid.New(),
+			WorkspaceID: wsid,
+		},
+	}
+
+	body := bytes.NewBufferString("{\"name\": \"Manager\", \"permissions\": [\"leads:read\"]}")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/auth/roles", body)
+	
+	ctx := context.WithValue(r.Context(), authboss.CTXKeyUser, user)
+	r = r.WithContext(ctx)
+
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 OK, got %d", w.Code)
+	}
+}
+
+func TestListUsersHandler(t *testing.T) {
+	ab := authboss.New()
+	wsid := uuid.MustParse("00000000-0000-0000-0000-000000000555")
+	
+	mockDB := &mockQuerier{
+		mockGetUsersByWorkspaceID: func(ctx context.Context, workspaceID uuid.UUID) ([]db.GetUsersByWorkspaceIDRow, error) {
+			if workspaceID != wsid {
+				t.Errorf("expected workspace id %v, got %v", wsid, workspaceID)
+			}
+			return []db.GetUsersByWorkspaceIDRow{
+				{ID: uuid.New(), Name: "Alice"},
+				{ID: uuid.New(), Name: "Bob"},
+			}, nil
+		},
+	}
+
+	handler := ListUsersHandler(ab, mockDB)
+
+	user := &User{
+		User: db.User{
+			ID:          uuid.New(),
+			WorkspaceID: wsid,
+		},
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/auth/users", nil)
+	
+	ctx := context.WithValue(r.Context(), authboss.CTXKeyUser, user)
+	r = r.WithContext(ctx)
+
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 OK, got %d", w.Code)
+	}
+}
+
+func TestUpdateUserRoleHandler(t *testing.T) {
+	ab := authboss.New()
+	wsid := uuid.MustParse("00000000-0000-0000-0000-000000000555")
+	targetUserID := uuid.New()
+	targetRoleID := uuid.New()
+	
+	mockDB := &mockQuerier{
+		mockUpdateUserRole: func(ctx context.Context, arg db.UpdateUserRoleParams) error {
+			if arg.WorkspaceID != wsid {
+				t.Errorf("expected workspace id %v, got %v", wsid, arg.WorkspaceID)
+			}
+			if arg.ID != targetUserID {
+				t.Errorf("expected user id %v, got %v", targetUserID, arg.ID)
+			}
+			if arg.RoleID.UUID != targetRoleID {
+				t.Errorf("expected role id %v, got %v", targetRoleID, arg.RoleID.UUID)
+			}
+			return nil
+		},
+	}
+
+	handler := UpdateUserRoleHandler(ab, mockDB)
+
+	user := &User{
+		User: db.User{
+			ID:          uuid.New(),
+			WorkspaceID: wsid,
+		},
+	}
+
+	body := bytes.NewBufferString("{\"role_id\": \"" + targetRoleID.String() + "\"}")
+	w := httptest.NewRecorder()
+	
+	// Since chi is used, we need to mock chi routing context
+	r := httptest.NewRequest("PUT", "/api/auth/users/"+targetUserID.String()+"/role", body)
+	chiCtx := chi.NewRouteContext()
+	chiCtx.URLParams.Add("id", targetUserID.String())
+	ctx := context.WithValue(r.Context(), chi.RouteCtxKey, chiCtx)
+	
+	ctx = context.WithValue(ctx, authboss.CTXKeyUser, user)
+	r = r.WithContext(ctx)
+
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 OK, got %d", w.Code)
+	}
+}
+
