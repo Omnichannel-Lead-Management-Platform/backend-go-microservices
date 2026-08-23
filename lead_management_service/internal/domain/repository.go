@@ -16,6 +16,16 @@ type LeadRepository interface {
 	// Stage operations
 	GetWorkspaceStages(ctx context.Context, workspaceID string) ([]*LeadStage, error)
 	CreateLeadStage(ctx context.Context, stage *LeadStage) error
+
+	// Internal Notes
+	AddInternalNote(ctx context.Context, note *InternalNote) error
+	GetInternalNotesByLead(ctx context.Context, workspaceID, leadID string) ([]*InternalNote, error)
+
+	// Message Templates
+	CreateMessageTemplate(ctx context.Context, template *MessageTemplate) error
+	GetMessageTemplates(ctx context.Context, workspaceID string) ([]*MessageTemplate, error)
+	UpdateMessageTemplate(ctx context.Context, template *MessageTemplate) error
+	DeleteMessageTemplate(ctx context.Context, workspaceID, templateID string) error
 }
 
 // NoteRepository defines the interface for internal note operations.

@@ -30,7 +30,10 @@ func (h *LeadHandler) RegisterRoutes(r chi.Router) {
 		r.Patch("/{id}/stage", h.UpdateLeadStage)
 		r.Patch("/{id}/assign", h.AssignLead)
 		r.Patch("/{id}/tags", h.UpdateLeadTags)
-		// We'll add notes and reminders later!
+		
+		// Pillar 3: Internal Notes
+		r.Get("/{id}/notes", h.GetInternalNotes)
+		r.Post("/{id}/notes", h.AddInternalNote)
 	})
 
 	// Pipeline Stages API
@@ -38,6 +41,15 @@ func (h *LeadHandler) RegisterRoutes(r chi.Router) {
 		r.Use(MockAuthMiddleware)
 		r.Get("/", h.ListWorkspaceStages)
 		r.Post("/", h.CreateLeadStage)
+	})
+
+	// Pillar 4: Message Templates API
+	r.Route("/api/v1/templates", func(r chi.Router) {
+		r.Use(MockAuthMiddleware)
+		r.Get("/", h.GetMessageTemplates)
+		r.Post("/", h.CreateMessageTemplate)
+		r.Put("/{id}", h.UpdateMessageTemplate)
+		r.Delete("/{id}", h.DeleteMessageTemplate)
 	})
 }
 
@@ -158,6 +170,53 @@ func (h *LeadHandler) UpdateLeadTags(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"status":"success"}`))
 }
 
+// ---- Pillar 3: Internal Notes Endpoints ----
+
+// GetInternalNotes fetches all private notes for a specific lead
+func (h *LeadHandler) GetInternalNotes(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+	leadID := chi.URLParam(r, "id")
+
+	notes, err := h.leadService.GetInternalNotesByLead(r.Context(), workspaceID, leadID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(notes)
+}
+
+// AddInternalNote allows an agent to leave a private note on a lead's conversation
+func (h *LeadHandler) AddInternalNote(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+	leadID := chi.URLParam(r, "id")
+
+	var note domain.InternalNote
+	if err := json.NewDecoder(r.Body).Decode(&note); err != nil {
+		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+		return
+	}
+	
+	// Security & Context Rules
+	note.WorkspaceID = workspaceID
+	// In this simplified version, we'll pretend the lead ID is the conversation ID,
+	// or that the frontend sends conversation_id in the JSON. If it's empty, we set it.
+	if note.ConversationID == "" {
+		note.ConversationID = leadID 
+	}
+	// The user ID would normally come from the Auth Middleware JWT
+	note.UserID = r.Header.Get("X-User-ID") 
+
+	if err := h.leadService.AddInternalNote(r.Context(), &note); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(note)
+}
+
 // ---- Pillar 1: Pipeline Configuration Endpoints ----
 
 // CreateLeadStage runs when an admin submits a form POST /api/v1/stages
@@ -194,4 +253,76 @@ func (h *LeadHandler) ListWorkspaceStages(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stages)
+}
+
+// ---- Pillar 4: Message Templates Endpoints ----
+
+// CreateMessageTemplate handles POST /api/v1/templates
+func (h *LeadHandler) CreateMessageTemplate(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+
+	var template domain.MessageTemplate
+	if err := json.NewDecoder(r.Body).Decode(&template); err != nil {
+		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+		return
+	}
+	template.WorkspaceID = workspaceID
+
+	if err := h.leadService.CreateMessageTemplate(r.Context(), &template); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(template)
+}
+
+// GetMessageTemplates handles GET /api/v1/templates
+func (h *LeadHandler) GetMessageTemplates(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+
+	templates, err := h.leadService.GetMessageTemplates(r.Context(), workspaceID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(templates)
+}
+
+// UpdateMessageTemplate handles PUT /api/v1/templates/{id}
+func (h *LeadHandler) UpdateMessageTemplate(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+	templateID := chi.URLParam(r, "id")
+
+	var template domain.MessageTemplate
+	if err := json.NewDecoder(r.Body).Decode(&template); err != nil {
+		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+		return
+	}
+	template.WorkspaceID = workspaceID
+	template.ID = templateID
+
+	if err := h.leadService.UpdateMessageTemplate(r.Context(), &template); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
+}
+
+// DeleteMessageTemplate handles DELETE /api/v1/templates/{id}
+func (h *LeadHandler) DeleteMessageTemplate(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+	templateID := chi.URLParam(r, "id")
+
+	if err := h.leadService.DeleteMessageTemplate(r.Context(), workspaceID, templateID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
 }

@@ -66,3 +66,13 @@ type LeadStateHistory struct {
 	ChangedBy   *string   `json:"changed_by,omitempty" db:"changed_by"`
 	ChangedAt   time.Time `json:"changed_at" db:"changed_at"`
 }
+
+// MessageTemplate represents a saved reply for quick responses.
+type MessageTemplate struct {
+	ID          string    `json:"id" db:"id"`
+	WorkspaceID string    `json:"workspace_id" db:"workspace_id"`
+	Title       string    `json:"title" db:"title"`
+	Content     string    `json:"content" db:"content"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+}

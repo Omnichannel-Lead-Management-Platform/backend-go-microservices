@@ -23,6 +23,16 @@ type MockLeadRepository struct {
 	GetWorkspaceStagesFunc func(ctx context.Context, workspaceID string) ([]*domain.LeadStage, error)
 	AssignLeadFunc         func(ctx context.Context, workspaceID, leadID, userID string) error
 	UpdateLeadTagsFunc     func(ctx context.Context, workspaceID, leadID string, tags []string) error
+	
+	// Pillar 3
+	AddInternalNoteFunc          func(ctx context.Context, note *domain.InternalNote) error
+	GetInternalNotesByLeadFunc   func(ctx context.Context, workspaceID, leadID string) ([]*domain.InternalNote, error)
+
+	// Pillar 4
+	CreateMessageTemplateFunc    func(ctx context.Context, template *domain.MessageTemplate) error
+	GetMessageTemplatesFunc      func(ctx context.Context, workspaceID string) ([]*domain.MessageTemplate, error)
+	UpdateMessageTemplateFunc    func(ctx context.Context, template *domain.MessageTemplate) error
+	DeleteMessageTemplateFunc    func(ctx context.Context, workspaceID, templateID string) error
 }
 
 func (m *MockLeadRepository) CreateLeadStage(ctx context.Context, stage *domain.LeadStage) error {
@@ -49,6 +59,50 @@ func (m *MockLeadRepository) AssignLead(ctx context.Context, workspaceID, leadID
 func (m *MockLeadRepository) UpdateLeadTags(ctx context.Context, workspaceID, leadID string, tags []string) error {
 	if m.UpdateLeadTagsFunc != nil {
 		return m.UpdateLeadTagsFunc(ctx, workspaceID, leadID, tags)
+	}
+	return nil
+}
+
+func (m *MockLeadRepository) AddInternalNote(ctx context.Context, note *domain.InternalNote) error {
+	if m.AddInternalNoteFunc != nil {
+		return m.AddInternalNoteFunc(ctx, note)
+	}
+	return nil
+}
+
+func (m *MockLeadRepository) GetInternalNotesByLead(ctx context.Context, workspaceID, leadID string) ([]*domain.InternalNote, error) {
+	if m.GetInternalNotesByLeadFunc != nil {
+		return m.GetInternalNotesByLeadFunc(ctx, workspaceID, leadID)
+	}
+	return nil, nil
+}
+
+// Pillar 4 Mock Methods
+
+func (m *MockLeadRepository) CreateMessageTemplate(ctx context.Context, template *domain.MessageTemplate) error {
+	if m.CreateMessageTemplateFunc != nil {
+		return m.CreateMessageTemplateFunc(ctx, template)
+	}
+	return nil
+}
+
+func (m *MockLeadRepository) GetMessageTemplates(ctx context.Context, workspaceID string) ([]*domain.MessageTemplate, error) {
+	if m.GetMessageTemplatesFunc != nil {
+		return m.GetMessageTemplatesFunc(ctx, workspaceID)
+	}
+	return nil, nil
+}
+
+func (m *MockLeadRepository) UpdateMessageTemplate(ctx context.Context, template *domain.MessageTemplate) error {
+	if m.UpdateMessageTemplateFunc != nil {
+		return m.UpdateMessageTemplateFunc(ctx, template)
+	}
+	return nil
+}
+
+func (m *MockLeadRepository) DeleteMessageTemplate(ctx context.Context, workspaceID, templateID string) error {
+	if m.DeleteMessageTemplateFunc != nil {
+		return m.DeleteMessageTemplateFunc(ctx, workspaceID, templateID)
 	}
 	return nil
 }
@@ -141,5 +195,87 @@ func TestUpdateLeadTags_TooManyTags(t *testing.T) {
 	err := service.UpdateLeadTags(context.Background(), "ws-1", "lead-1", tags)
 	if err == nil {
 		t.Errorf("Expected an error for more than 10 tags, but got none!")
+	}
+}
+
+// ---- PILLAR 3 TESTS ----
+
+func TestAddInternalNote_Success(t *testing.T) {
+	fakeRepo := &MockLeadRepository{
+		AddInternalNoteFunc: func(ctx context.Context, note *domain.InternalNote) error {
+			note.ID = "note-123"
+			return nil
+		},
+	}
+	service := NewLeadService(fakeRepo, &MockEventPublisher{})
+
+	note := &domain.InternalNote{
+		WorkspaceID: "ws-1",
+		Content:     "This is a valid note!",
+	}
+
+	err := service.AddInternalNote(context.Background(), note)
+	if err != nil {
+		t.Errorf("Expected success, got error: %v", err)
+	}
+	if note.ID != "note-123" {
+		t.Errorf("Expected database to set note ID, got empty")
+	}
+}
+
+func TestAddInternalNote_EmptyContent(t *testing.T) {
+	fakeRepo := &MockLeadRepository{} // DB won't be called because Service blocks it
+	service := NewLeadService(fakeRepo, &MockEventPublisher{})
+
+	note := &domain.InternalNote{
+		WorkspaceID: "ws-1",
+		Content:     "", // Invalid!
+	}
+
+	err := service.AddInternalNote(context.Background(), note)
+	if err == nil {
+		t.Errorf("Expected Head Chef to block empty notes, but it succeeded!")
+	}
+}
+
+// ---- PILLAR 4 TESTS ----
+
+func TestCreateMessageTemplate_Success(t *testing.T) {
+	fakeRepo := &MockLeadRepository{
+		CreateMessageTemplateFunc: func(ctx context.Context, template *domain.MessageTemplate) error {
+			template.ID = "tpl-123"
+			return nil
+		},
+	}
+	service := NewLeadService(fakeRepo, &MockEventPublisher{})
+
+	template := &domain.MessageTemplate{
+		WorkspaceID: "ws-1",
+		Title:       "Greeting",
+		Content:     "Hello there!",
+	}
+
+	err := service.CreateMessageTemplate(context.Background(), template)
+	if err != nil {
+		t.Errorf("Expected success, got error: %v", err)
+	}
+	if template.ID != "tpl-123" {
+		t.Errorf("Expected database to set template ID, got empty")
+	}
+}
+
+func TestCreateMessageTemplate_EmptyTitle(t *testing.T) {
+	fakeRepo := &MockLeadRepository{} // Database won't be called
+	service := NewLeadService(fakeRepo, &MockEventPublisher{})
+
+	template := &domain.MessageTemplate{
+		WorkspaceID: "ws-1",
+		Title:       "", // Invalid!
+		Content:     "Hello there!",
+	}
+
+	err := service.CreateMessageTemplate(context.Background(), template)
+	if err == nil {
+		t.Errorf("Expected Service to block empty title, but it succeeded!")
 	}
 }

@@ -228,3 +228,122 @@ func (r *LeadRepository) CreateLeadStage(ctx context.Context, stage *domain.Lead
 	}
 	return nil
 }
+
+// AddInternalNote inserts a private note left by an agent.
+func (r *LeadRepository) AddInternalNote(ctx context.Context, note *domain.InternalNote) error {
+	query := `
+		INSERT INTO internal_notes (workspace_id, conversation_id, user_id, content)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, created_at, updated_at
+	`
+	err := r.db.QueryRowContext(ctx, query,
+		note.WorkspaceID,
+		note.ConversationID,
+		note.UserID,
+		note.Content,
+	).Scan(&note.ID, &note.CreatedAt, &note.UpdatedAt)
+
+	if err != nil {
+		return fmt.Errorf("failed to add internal note: %w", err)
+	}
+	return nil
+}
+
+// GetInternalNotesByLead fetches all internal notes for a specific lead using a SQL JOIN.
+func (r *LeadRepository) GetInternalNotesByLead(ctx context.Context, workspaceID, leadID string) ([]*domain.InternalNote, error) {
+	query := `
+		SELECT n.id, n.workspace_id, n.conversation_id, n.user_id, n.content, n.created_at, n.updated_at
+		FROM internal_notes n
+		JOIN conversations c ON n.conversation_id = c.id
+		WHERE n.workspace_id = $1 AND c.lead_id = $2
+		ORDER BY n.created_at ASC
+	`
+	rows, err := r.db.QueryContext(ctx, query, workspaceID, leadID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch internal notes: %w", err)
+	}
+	defer rows.Close()
+
+	var notes []*domain.InternalNote
+	for rows.Next() {
+		var n domain.InternalNote
+		err := rows.Scan(&n.ID, &n.WorkspaceID, &n.ConversationID, &n.UserID, &n.Content, &n.CreatedAt, &n.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan internal note: %w", err)
+		}
+		notes = append(notes, &n)
+	}
+	return notes, nil
+}
+
+// ---- Pillar 4: Message Templates ----
+
+func (r *LeadRepository) CreateMessageTemplate(ctx context.Context, t *domain.MessageTemplate) error {
+	query := `
+		INSERT INTO message_templates (workspace_id, title, content)
+		VALUES ($1, $2, $3)
+		RETURNING id, created_at, updated_at
+	`
+	err := r.db.QueryRowContext(ctx, query, t.WorkspaceID, t.Title, t.Content).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to create template: %w", err)
+	}
+	return nil
+}
+
+func (r *LeadRepository) GetMessageTemplates(ctx context.Context, workspaceID string) ([]*domain.MessageTemplate, error) {
+	query := `
+		SELECT id, workspace_id, title, content, created_at, updated_at
+		FROM message_templates
+		WHERE workspace_id = $1
+		ORDER BY created_at DESC
+	`
+	rows, err := r.db.QueryContext(ctx, query, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch templates: %w", err)
+	}
+	defer rows.Close()
+
+	var templates []*domain.MessageTemplate
+	for rows.Next() {
+		var t domain.MessageTemplate
+		if err := rows.Scan(&t.ID, &t.WorkspaceID, &t.Title, &t.Content, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan template: %w", err)
+		}
+		templates = append(templates, &t)
+	}
+	return templates, nil
+}
+
+func (r *LeadRepository) UpdateMessageTemplate(ctx context.Context, t *domain.MessageTemplate) error {
+	query := `
+		UPDATE message_templates
+		SET title = $1, content = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $3 AND workspace_id = $4
+	`
+	result, err := r.db.ExecContext(ctx, query, t.Title, t.Content, t.ID, t.WorkspaceID)
+	if err != nil {
+		return fmt.Errorf("failed to update template: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("template not found")
+	}
+	return nil
+}
+
+func (r *LeadRepository) DeleteMessageTemplate(ctx context.Context, workspaceID, templateID string) error {
+	query := `
+		DELETE FROM message_templates
+		WHERE id = $1 AND workspace_id = $2
+	`
+	result, err := r.db.ExecContext(ctx, query, templateID, workspaceID)
+	if err != nil {
+		return fmt.Errorf("failed to delete template: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("template not found")
+	}
+	return nil
+}

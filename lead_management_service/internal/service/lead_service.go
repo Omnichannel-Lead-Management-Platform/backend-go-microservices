@@ -158,3 +158,52 @@ func (s *LeadService) UpdateLeadTags(ctx context.Context, workspaceID, leadID st
 	}
 	return nil
 }
+
+// AddInternalNote adds a private note for a lead.
+func (s *LeadService) AddInternalNote(ctx context.Context, note *domain.InternalNote) error {
+	// Business Rule: Ensure the note isn't completely empty
+	if note.Content == "" {
+		return fmt.Errorf("note content cannot be empty")
+	}
+
+	// In a complete system, we would first find the Active Conversation for this Lead.
+	// For this simplified version, we just save the note to the DB using the conversation ID provided.
+	err := s.repo.AddInternalNote(ctx, note)
+	if err != nil {
+		return fmt.Errorf("failed to add internal note: %w", err)
+	}
+	return nil
+}
+
+// GetInternalNotesByLead fetches all internal notes for a specific lead.
+func (s *LeadService) GetInternalNotesByLead(ctx context.Context, workspaceID, leadID string) ([]*domain.InternalNote, error) {
+	return s.repo.GetInternalNotesByLead(ctx, workspaceID, leadID)
+}
+
+// ---- Pillar 4: Message Templates ----
+
+// CreateMessageTemplate creates a new saved reply.
+func (s *LeadService) CreateMessageTemplate(ctx context.Context, template *domain.MessageTemplate) error {
+	if template.Title == "" || template.Content == "" {
+		return fmt.Errorf("template title and content cannot be empty")
+	}
+	return s.repo.CreateMessageTemplate(ctx, template)
+}
+
+// GetMessageTemplates fetches all saved replies for a workspace.
+func (s *LeadService) GetMessageTemplates(ctx context.Context, workspaceID string) ([]*domain.MessageTemplate, error) {
+	return s.repo.GetMessageTemplates(ctx, workspaceID)
+}
+
+// UpdateMessageTemplate updates an existing saved reply.
+func (s *LeadService) UpdateMessageTemplate(ctx context.Context, template *domain.MessageTemplate) error {
+	if template.Title == "" || template.Content == "" {
+		return fmt.Errorf("template title and content cannot be empty")
+	}
+	return s.repo.UpdateMessageTemplate(ctx, template)
+}
+
+// DeleteMessageTemplate deletes a saved reply.
+func (s *LeadService) DeleteMessageTemplate(ctx context.Context, workspaceID, templateID string) error {
+	return s.repo.DeleteMessageTemplate(ctx, workspaceID, templateID)
+}
