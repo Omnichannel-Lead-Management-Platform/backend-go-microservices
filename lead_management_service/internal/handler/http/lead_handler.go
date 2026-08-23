@@ -28,7 +28,16 @@ func (h *LeadHandler) RegisterRoutes(r chi.Router) {
 		r.Get("/", h.ListLeads)
 		r.Post("/", h.CreateLead)
 		r.Patch("/{id}/stage", h.UpdateLeadStage)
+		r.Patch("/{id}/assign", h.AssignLead)
+		r.Patch("/{id}/tags", h.UpdateLeadTags)
 		// We'll add notes and reminders later!
+	})
+
+	// Pipeline Stages API
+	r.Route("/api/v1/stages", func(r chi.Router) {
+		r.Use(MockAuthMiddleware)
+		r.Get("/", h.ListWorkspaceStages)
+		r.Post("/", h.CreateLeadStage)
 	})
 }
 
@@ -101,4 +110,88 @@ func (h *LeadHandler) UpdateLeadStage(w http.ResponseWriter, r *http.Request) {
 	// 4. Tell the web browser it was a success!
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"success"}`))
+}
+
+// AssignLead runs when an admin clicks "Assign to Bob" (PATCH /api/v1/leads/123/assign)
+func (h *LeadHandler) AssignLead(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+	leadID := chi.URLParam(r, "id")
+
+	var requestBody struct {
+		UserID string `json:"user_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+		return
+	}
+
+	err := h.leadService.AssignLead(r.Context(), workspaceID, leadID, requestBody.UserID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
+}
+
+// UpdateLeadTags runs when an agent adds labels to a chat (PATCH /api/v1/leads/123/tags)
+func (h *LeadHandler) UpdateLeadTags(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+	leadID := chi.URLParam(r, "id")
+
+	var requestBody struct {
+		Tags []string `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+		return
+	}
+
+	err := h.leadService.UpdateLeadTags(r.Context(), workspaceID, leadID, requestBody.Tags)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
+}
+
+// ---- Pillar 1: Pipeline Configuration Endpoints ----
+
+// CreateLeadStage runs when an admin submits a form POST /api/v1/stages
+func (h *LeadHandler) CreateLeadStage(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+
+	var stage domain.LeadStage
+	if err := json.NewDecoder(r.Body).Decode(&stage); err != nil {
+		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+		return
+	}
+	
+	// Enforce Multi-Tenant Security
+	stage.WorkspaceID = workspaceID
+
+	if err := h.leadService.CreateLeadStage(r.Context(), &stage); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(stage)
+}
+
+// ListWorkspaceStages runs when the frontend fetches GET /api/v1/stages to render the Kanban board
+func (h *LeadHandler) ListWorkspaceStages(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+
+	stages, err := h.leadService.ListWorkspaceStages(r.Context(), workspaceID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stages)
 }

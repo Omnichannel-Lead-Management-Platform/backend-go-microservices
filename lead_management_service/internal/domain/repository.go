@@ -10,6 +10,8 @@ type LeadRepository interface {
 	ListLeads(ctx context.Context, workspaceID string) ([]*Lead, error)
 	UpdateLeadStage(ctx context.Context, workspaceID, leadID, newStage string) error
 	AssignLead(ctx context.Context, workspaceID, leadID, userID string) error
+	UpdateLeadTags(ctx context.Context, workspaceID, leadID string, tags []string) error
+	InsertLeadStateHistory(ctx context.Context, history *LeadStateHistory) error
 
 	// Stage operations
 	GetWorkspaceStages(ctx context.Context, workspaceID string) ([]*LeadStage, error)

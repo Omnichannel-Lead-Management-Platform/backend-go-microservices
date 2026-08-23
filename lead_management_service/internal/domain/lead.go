@@ -14,6 +14,8 @@ type Lead struct {
 	Email          string    `json:"email" db:"email"`
 	Phone          string    `json:"phone" db:"phone"`
 	AssignedTo     *string   `json:"assigned_to,omitempty" db:"assigned_to"`
+	Tags           []string  `json:"tags" db:"tags"` // JSONB array of tags
+	LastActivityAt time.Time `json:"last_activity_at" db:"last_activity_at"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 }
@@ -52,4 +54,15 @@ type FollowUpReminder struct {
 	IsCompleted bool      `json:"is_completed" db:"is_completed"`
 	CreatedAt   time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// LeadStateHistory represents an audit trail record of a lead changing stages.
+type LeadStateHistory struct {
+	ID          string    `json:"id" db:"id"`
+	WorkspaceID string    `json:"workspace_id" db:"workspace_id"`
+	LeadID      string    `json:"lead_id" db:"lead_id"`
+	FromState   string    `json:"from_state" db:"from_state"`
+	ToState     string    `json:"to_state" db:"to_state"`
+	ChangedBy   *string   `json:"changed_by,omitempty" db:"changed_by"`
+	ChangedAt   time.Time `json:"changed_at" db:"changed_at"`
 }
