@@ -161,6 +161,28 @@ func (r *LeadRepository) UpdateLeadTags(ctx context.Context, workspaceID, leadID
 	return nil
 }
 
+// UpdateLeadActivity bumps the last_activity_at timestamp for a lead based on an incoming message.
+func (r *LeadRepository) UpdateLeadActivity(ctx context.Context, workspaceID, conversationID string) error {
+	// First find the lead_id for this conversation, then update the lead
+	query := `
+		UPDATE leads l
+		SET last_activity_at = CURRENT_TIMESTAMP
+		FROM conversations c
+		WHERE l.id = c.lead_id 
+		AND c.id = $1 
+		AND l.workspace_id = $2
+	`
+	result, err := r.db.ExecContext(ctx, query, conversationID, workspaceID)
+	if err != nil {
+		return fmt.Errorf("failed to update lead activity: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("lead or conversation not found")
+	}
+	return nil
+}
+
 // InsertLeadStateHistory logs an audit trail of a lead's stage change.
 func (r *LeadRepository) InsertLeadStateHistory(ctx context.Context, history *domain.LeadStateHistory) error {
 	query := `
@@ -227,6 +249,63 @@ func (r *LeadRepository) CreateLeadStage(ctx context.Context, stage *domain.Lead
 		return fmt.Errorf("failed to create lead stage: %w", err)
 	}
 	return nil
+}
+
+func (r *LeadRepository) UpdateLeadStageConfig(ctx context.Context, stage *domain.LeadStage) error {
+	query := `
+		UPDATE lead_stages
+		SET label = $1, color = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $3 AND workspace_id = $4
+	`
+	result, err := r.db.ExecContext(ctx, query, stage.Label, stage.Color, stage.ID, stage.WorkspaceID)
+	if err != nil {
+		return fmt.Errorf("failed to update lead stage config: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("lead stage not found")
+	}
+	return nil
+}
+
+func (r *LeadRepository) DeleteLeadStage(ctx context.Context, workspaceID, stageID string) error {
+	query := `
+		DELETE FROM lead_stages
+		WHERE id = $1 AND workspace_id = $2
+	`
+	result, err := r.db.ExecContext(ctx, query, stageID, workspaceID)
+	if err != nil {
+		return fmt.Errorf("failed to delete lead stage: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("lead stage not found")
+	}
+	return nil
+}
+
+func (r *LeadRepository) UpdateLeadStagePositions(ctx context.Context, workspaceID string, stageIDs []string) error {
+	// Start a transaction since we are doing bulk updates
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	query := `
+		UPDATE lead_stages
+		SET position = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2 AND workspace_id = $3
+	`
+	for i, id := range stageIDs {
+		// position = index + 1 (1-based ordering)
+		_, err := tx.ExecContext(ctx, query, i+1, id, workspaceID)
+		if err != nil {
+			return fmt.Errorf("failed to update stage %s position: %w", id, err)
+		}
+	}
+	
+	return tx.Commit()
 }
 
 // AddInternalNote inserts a private note left by an agent.
@@ -346,4 +425,40 @@ func (r *LeadRepository) DeleteMessageTemplate(ctx context.Context, workspaceID,
 		return fmt.Errorf("template not found")
 	}
 	return nil
+}
+
+// ---- Chat History ----
+
+// GetMessagesByLead fetches the message history for a lead by joining the conversations table.
+func (r *LeadRepository) GetMessagesByLead(ctx context.Context, workspaceID, leadID string) ([]*domain.Message, error) {
+	query := `
+		SELECT m.id, m.conversation_id, m.sender_type, m.sender_id, m.content, m.metadata, m.created_at
+		FROM messages m
+		JOIN conversations c ON m.conversation_id = c.id
+		WHERE c.workspace_id = $1 AND c.lead_id = $2
+		ORDER BY m.created_at ASC
+	`
+	rows, err := r.db.QueryContext(ctx, query, workspaceID, leadID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch messages: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []*domain.Message
+	for rows.Next() {
+		var m domain.Message
+		var metadataBytes []byte
+		
+		err := rows.Scan(&m.ID, &m.ConversationID, &m.SenderType, &m.SenderID, &m.Content, &metadataBytes, &m.CreatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan message: %w", err)
+		}
+		
+		if metadataBytes != nil {
+			_ = json.Unmarshal(metadataBytes, &m.Metadata)
+		}
+		
+		messages = append(messages, &m)
+	}
+	return messages, nil
 }

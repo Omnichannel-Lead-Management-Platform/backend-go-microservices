@@ -76,3 +76,14 @@ type MessageTemplate struct {
 	CreatedAt   time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
 }
+
+// Message represents a single chat message sent by a customer or agent.
+type Message struct {
+	ID             string                 `json:"id" db:"id"`
+	ConversationID string                 `json:"conversation_id" db:"conversation_id"`
+	SenderType     string                 `json:"sender_type" db:"sender_type"` // e.g., 'customer', 'agent'
+	SenderID       *string                `json:"sender_id,omitempty" db:"sender_id"`
+	Content        string                 `json:"content" db:"content"`
+	Metadata       map[string]interface{} `json:"metadata" db:"metadata"` // JSONB
+	CreatedAt      time.Time              `json:"created_at" db:"created_at"`
+}

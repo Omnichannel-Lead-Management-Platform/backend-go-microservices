@@ -34,6 +34,9 @@ func (h *LeadHandler) RegisterRoutes(r chi.Router) {
 		// Pillar 3: Internal Notes
 		r.Get("/{id}/notes", h.GetInternalNotes)
 		r.Post("/{id}/notes", h.AddInternalNote)
+		
+		// Chat History
+		r.Get("/{id}/messages", h.GetMessagesByLead)
 	})
 
 	// Pipeline Stages API
@@ -41,6 +44,9 @@ func (h *LeadHandler) RegisterRoutes(r chi.Router) {
 		r.Use(MockAuthMiddleware)
 		r.Get("/", h.ListWorkspaceStages)
 		r.Post("/", h.CreateLeadStage)
+		r.Patch("/{id}", h.UpdateLeadStageConfig)
+		r.Delete("/{id}", h.DeleteLeadStage)
+		r.Put("/reorder", h.ReorderLeadStages)
 	})
 
 	// Pillar 4: Message Templates API
@@ -187,6 +193,21 @@ func (h *LeadHandler) GetInternalNotes(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(notes)
 }
 
+// GetMessagesByLead handles GET /api/v1/leads/{id}/messages
+func (h *LeadHandler) GetMessagesByLead(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+	leadID := chi.URLParam(r, "id")
+
+	messages, err := h.leadService.GetMessagesByLead(r.Context(), workspaceID, leadID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(messages)
+}
+
 // AddInternalNote allows an agent to leave a private note on a lead's conversation
 func (h *LeadHandler) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
@@ -253,6 +274,71 @@ func (h *LeadHandler) ListWorkspaceStages(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stages)
+}
+
+// UpdateLeadStageConfig handles PATCH /api/v1/stages/{id}
+func (h *LeadHandler) UpdateLeadStageConfig(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+	stageID := chi.URLParam(r, "id")
+
+	var requestBody struct {
+		Label string `json:"label"`
+		Color string `json:"color"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+		return
+	}
+
+	stage := &domain.LeadStage{
+		ID:          stageID,
+		WorkspaceID: workspaceID,
+		Label:       requestBody.Label,
+		Color:       requestBody.Color,
+	}
+
+	if err := h.leadService.UpdateLeadStageConfig(r.Context(), stage); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
+}
+
+// DeleteLeadStage handles DELETE /api/v1/stages/{id}
+func (h *LeadHandler) DeleteLeadStage(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+	stageID := chi.URLParam(r, "id")
+
+	if err := h.leadService.DeleteLeadStage(r.Context(), workspaceID, stageID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
+}
+
+// ReorderLeadStages handles PUT /api/v1/stages/reorder
+func (h *LeadHandler) ReorderLeadStages(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
+
+	var requestBody struct {
+		StageIDs []string `json:"stage_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.leadService.ReorderLeadStages(r.Context(), workspaceID, requestBody.StageIDs); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
 }
 
 // ---- Pillar 4: Message Templates Endpoints ----

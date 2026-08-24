@@ -16,18 +16,14 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/lib/pq" // Postgres driver
 
-	"github.com/omnichannel/lead_management_service/internal/domain"
 	handler "github.com/omnichannel/lead_management_service/internal/handler/http"
 	"github.com/omnichannel/lead_management_service/internal/repository/postgres"
 	"github.com/omnichannel/lead_management_service/internal/service"
+	"github.com/omnichannel/lead_management_service/internal/messaging/memory"
+	"github.com/omnichannel/lead_management_service/internal/worker"
 )
 
-// DummyEventPublisher just prints to the console instead of real Redis (for now)
-type DummyEventPublisher struct{}
-func (p *DummyEventPublisher) Publish(ctx context.Context, topic string, event domain.Event) error {
-	fmt.Printf("[REDIS MOCK] Successfully published event '%s' to topic '%s'\n", event.Type, topic)
-	return nil
-}
+// We removed DummyEventPublisher because we now have a real (in-memory) EventBus!
 
 func runMigrations(dbURL string) {
 	fmt.Println("Running database migrations...")
@@ -62,9 +58,27 @@ func main() {
 
 	// 2. Wire up the Clean Architecture Layers
 	repo := postgres.NewLeadRepository(db)
-	publisher := &DummyEventPublisher{}
-	leadSvc := service.NewLeadService(repo, publisher)
+	
+	// Pillar 5: Event Bus (Simulating Redis)
+	eventBus := memory.NewEventBus()
+	
+	leadSvc := service.NewLeadService(repo, eventBus)
 	leadHandler := handler.NewLeadHandler(leadSvc)
+
+	// Pillar 5: Start the Background Workers
+	aiWorker := worker.NewAISummaryWorker(eventBus)
+	go func() {
+		if err := aiWorker.Start(context.Background()); err != nil {
+			log.Printf("AI Summary Worker crashed: %v", err)
+		}
+	}()
+
+	activityWorker := worker.NewActivityWorker(eventBus, repo)
+	go func() {
+		if err := activityWorker.Start(context.Background()); err != nil {
+			log.Printf("Activity Worker crashed: %v", err)
+		}
+	}()
 
 	// 3. Set up the Chi Router
 	r := chi.NewRouter()

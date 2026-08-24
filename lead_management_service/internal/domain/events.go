@@ -13,3 +13,8 @@ type Event struct {
 type EventPublisher interface {
 	Publish(ctx context.Context, topic string, event Event) error
 }
+
+// EventSubscriber defines the interface for listening to asynchronous events.
+type EventSubscriber interface {
+	Subscribe(ctx context.Context, topic string) (<-chan Event, error)
+}

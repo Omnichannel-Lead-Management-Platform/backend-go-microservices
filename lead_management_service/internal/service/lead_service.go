@@ -135,6 +135,30 @@ func (s *LeadService) ListWorkspaceStages(ctx context.Context, workspaceID strin
 	return s.repo.GetWorkspaceStages(ctx, workspaceID)
 }
 
+// UpdateLeadStageConfig updates a pipeline stage's label or color.
+func (s *LeadService) UpdateLeadStageConfig(ctx context.Context, stage *domain.LeadStage) error {
+	if stage.Label == "" {
+		return fmt.Errorf("stage label cannot be empty")
+	}
+	return s.repo.UpdateLeadStageConfig(ctx, stage)
+}
+
+// DeleteLeadStage removes a custom pipeline stage.
+func (s *LeadService) DeleteLeadStage(ctx context.Context, workspaceID, stageID string) error {
+	// Business Rule: We could check if there are any leads currently in this stage,
+	// and prevent deletion or move them to a default stage.
+	// For simplicity, we'll just allow deletion.
+	return s.repo.DeleteLeadStage(ctx, workspaceID, stageID)
+}
+
+// ReorderLeadStages takes an array of stage IDs in the new correct order and updates their positions.
+func (s *LeadService) ReorderLeadStages(ctx context.Context, workspaceID string, stageIDs []string) error {
+	if len(stageIDs) == 0 {
+		return fmt.Errorf("must provide at least one stage to reorder")
+	}
+	return s.repo.UpdateLeadStagePositions(ctx, workspaceID, stageIDs)
+}
+
 // AssignLead assigns a lead to a specific user (agent).
 func (s *LeadService) AssignLead(ctx context.Context, workspaceID, leadID, userID string) error {
 	// Business Rule: We could check if the userID actually exists in the Auth Service.
@@ -206,4 +230,11 @@ func (s *LeadService) UpdateMessageTemplate(ctx context.Context, template *domai
 // DeleteMessageTemplate deletes a saved reply.
 func (s *LeadService) DeleteMessageTemplate(ctx context.Context, workspaceID, templateID string) error {
 	return s.repo.DeleteMessageTemplate(ctx, workspaceID, templateID)
+}
+
+// ---- Chat History ----
+
+// GetMessagesByLead fetches all messages for a lead.
+func (s *LeadService) GetMessagesByLead(ctx context.Context, workspaceID, leadID string) ([]*domain.Message, error) {
+	return s.repo.GetMessagesByLead(ctx, workspaceID, leadID)
 }

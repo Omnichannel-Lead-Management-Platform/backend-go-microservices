@@ -19,10 +19,19 @@ type MockLeadRepository struct {
 	domain.LeadRepository
 
 	// These variables let us control what the fake database replies with
-	CreateLeadStageFunc    func(ctx context.Context, stage *domain.LeadStage) error
-	GetWorkspaceStagesFunc func(ctx context.Context, workspaceID string) ([]*domain.LeadStage, error)
-	AssignLeadFunc         func(ctx context.Context, workspaceID, leadID, userID string) error
-	UpdateLeadTagsFunc     func(ctx context.Context, workspaceID, leadID string, tags []string) error
+	CreateLeadFunc             func(ctx context.Context, lead *domain.Lead) error
+	UpdateLeadStageFunc        func(ctx context.Context, workspaceID, leadID, newStage string) error
+	AssignLeadFunc             func(ctx context.Context, workspaceID, leadID, userID string) error
+	UpdateLeadTagsFunc         func(ctx context.Context, workspaceID, leadID string, tags []string) error
+	InsertLeadStateHistoryFunc func(ctx context.Context, history *domain.LeadStateHistory) error
+	UpdateLeadActivityFunc     func(ctx context.Context, workspaceID, conversationID string) error
+
+	// Stage operations
+	GetWorkspaceStagesFunc       func(ctx context.Context, workspaceID string) ([]*domain.LeadStage, error)
+	CreateLeadStageFunc          func(ctx context.Context, stage *domain.LeadStage) error
+	UpdateLeadStageConfigFunc    func(ctx context.Context, stage *domain.LeadStage) error
+	DeleteLeadStageFunc          func(ctx context.Context, workspaceID, stageID string) error
+	UpdateLeadStagePositionsFunc func(ctx context.Context, workspaceID string, stageIDs []string) error
 	
 	// Pillar 3
 	AddInternalNoteFunc          func(ctx context.Context, note *domain.InternalNote) error
@@ -35,9 +44,16 @@ type MockLeadRepository struct {
 	DeleteMessageTemplateFunc    func(ctx context.Context, workspaceID, templateID string) error
 }
 
-func (m *MockLeadRepository) CreateLeadStage(ctx context.Context, stage *domain.LeadStage) error {
-	if m.CreateLeadStageFunc != nil {
-		return m.CreateLeadStageFunc(ctx, stage)
+func (m *MockLeadRepository) CreateLead(ctx context.Context, lead *domain.Lead) error {
+	if m.CreateLeadFunc != nil {
+		return m.CreateLeadFunc(ctx, lead)
+	}
+	return nil
+}
+
+func (m *MockLeadRepository) UpdateLeadStage(ctx context.Context, workspaceID, leadID, newStage string) error {
+	if m.UpdateLeadStageFunc != nil {
+		return m.UpdateLeadStageFunc(ctx, workspaceID, leadID, newStage)
 	}
 	return nil
 }
@@ -47,6 +63,34 @@ func (m *MockLeadRepository) GetWorkspaceStages(ctx context.Context, workspaceID
 		return m.GetWorkspaceStagesFunc(ctx, workspaceID)
 	}
 	return nil, nil
+}
+
+func (m *MockLeadRepository) CreateLeadStage(ctx context.Context, stage *domain.LeadStage) error {
+	if m.CreateLeadStageFunc != nil {
+		return m.CreateLeadStageFunc(ctx, stage)
+	}
+	return nil
+}
+
+func (m *MockLeadRepository) UpdateLeadStageConfig(ctx context.Context, stage *domain.LeadStage) error {
+	if m.UpdateLeadStageConfigFunc != nil {
+		return m.UpdateLeadStageConfigFunc(ctx, stage)
+	}
+	return nil
+}
+
+func (m *MockLeadRepository) DeleteLeadStage(ctx context.Context, workspaceID, stageID string) error {
+	if m.DeleteLeadStageFunc != nil {
+		return m.DeleteLeadStageFunc(ctx, workspaceID, stageID)
+	}
+	return nil
+}
+
+func (m *MockLeadRepository) UpdateLeadStagePositions(ctx context.Context, workspaceID string, stageIDs []string) error {
+	if m.UpdateLeadStagePositionsFunc != nil {
+		return m.UpdateLeadStagePositionsFunc(ctx, workspaceID, stageIDs)
+	}
+	return nil
 }
 
 func (m *MockLeadRepository) AssignLead(ctx context.Context, workspaceID, leadID, userID string) error {
@@ -59,6 +103,20 @@ func (m *MockLeadRepository) AssignLead(ctx context.Context, workspaceID, leadID
 func (m *MockLeadRepository) UpdateLeadTags(ctx context.Context, workspaceID, leadID string, tags []string) error {
 	if m.UpdateLeadTagsFunc != nil {
 		return m.UpdateLeadTagsFunc(ctx, workspaceID, leadID, tags)
+	}
+	return nil
+}
+
+func (m *MockLeadRepository) UpdateLeadActivity(ctx context.Context, workspaceID, conversationID string) error {
+	if m.UpdateLeadActivityFunc != nil {
+		return m.UpdateLeadActivityFunc(ctx, workspaceID, conversationID)
+	}
+	return nil
+}
+
+func (m *MockLeadRepository) InsertLeadStateHistory(ctx context.Context, history *domain.LeadStateHistory) error {
+	if m.InsertLeadStateHistoryFunc != nil {
+		return m.InsertLeadStateHistoryFunc(ctx, history)
 	}
 	return nil
 }
@@ -277,5 +335,33 @@ func TestCreateMessageTemplate_EmptyTitle(t *testing.T) {
 	err := service.CreateMessageTemplate(context.Background(), template)
 	if err == nil {
 		t.Errorf("Expected Service to block empty title, but it succeeded!")
+	}
+}
+
+// ---- NEW TESTS FOR PIPELINE CONFIG ----
+
+func TestUpdateLeadStageConfig_EmptyLabel(t *testing.T) {
+	fakeRepo := &MockLeadRepository{}
+	service := NewLeadService(fakeRepo, &MockEventPublisher{})
+
+	stage := &domain.LeadStage{
+		WorkspaceID: "ws-1",
+		ID:          "stg-1",
+		Label:       "", // Invalid!
+	}
+
+	err := service.UpdateLeadStageConfig(context.Background(), stage)
+	if err == nil {
+		t.Errorf("Expected Service to block empty label, but it succeeded!")
+	}
+}
+
+func TestReorderLeadStages_EmptyList(t *testing.T) {
+	fakeRepo := &MockLeadRepository{}
+	service := NewLeadService(fakeRepo, &MockEventPublisher{})
+
+	err := service.ReorderLeadStages(context.Background(), "ws-1", []string{})
+	if err == nil {
+		t.Errorf("Expected Service to block empty stage list, but it succeeded!")
 	}
 }

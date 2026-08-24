@@ -12,14 +12,21 @@ type LeadRepository interface {
 	AssignLead(ctx context.Context, workspaceID, leadID, userID string) error
 	UpdateLeadTags(ctx context.Context, workspaceID, leadID string, tags []string) error
 	InsertLeadStateHistory(ctx context.Context, history *LeadStateHistory) error
+	UpdateLeadActivity(ctx context.Context, workspaceID, conversationID string) error
 
 	// Stage operations
 	GetWorkspaceStages(ctx context.Context, workspaceID string) ([]*LeadStage, error)
 	CreateLeadStage(ctx context.Context, stage *LeadStage) error
+	UpdateLeadStageConfig(ctx context.Context, stage *LeadStage) error
+	DeleteLeadStage(ctx context.Context, workspaceID, stageID string) error
+	UpdateLeadStagePositions(ctx context.Context, workspaceID string, stageIDs []string) error
 
 	// Internal Notes
 	AddInternalNote(ctx context.Context, note *InternalNote) error
 	GetInternalNotesByLead(ctx context.Context, workspaceID, leadID string) ([]*InternalNote, error)
+
+	// Chat History
+	GetMessagesByLead(ctx context.Context, workspaceID, leadID string) ([]*Message, error)
 
 	// Message Templates
 	CreateMessageTemplate(ctx context.Context, template *MessageTemplate) error
