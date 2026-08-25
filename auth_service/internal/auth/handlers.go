@@ -263,7 +263,64 @@ func GetRolePermissionsHandler(ab *authboss.Authboss, querier db.Querier) http.H
 	}
 }
 
+type UpdateRolePermissionsRequest struct {
+	Permissions []string `json:"permissions"`
+}
 
+func UpdateRolePermissionsHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roleIDStr := chi.URLParam(r, "id")
+		roleID, err := uuid.Parse(roleIDStr)
+		if err != nil {
+			api.Error(w, http.StatusBadRequest, "Invalid role ID")
+			return
+		}
+
+		var req UpdateRolePermissionsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			api.Error(w, http.StatusBadRequest, "Invalid request payload")
+			return
+		}
+		
+		err = querier.ClearRolePermissions(r.Context(), roleID)
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to clear old permissions")
+			return
+		}
+
+		for _, p := range req.Permissions {
+			perm, err := querier.GetPermissionByName(r.Context(), p)
+			if err == nil {
+				querier.AssignPermissionToRole(r.Context(), db.AssignPermissionToRoleParams{
+					RoleID:       roleID,
+					PermissionID: perm.ID,
+				})
+			}
+		}
+
+		api.Success(w, nil, "Role permissions updated successfully")
+	}
+}
+
+func DeleteRoleHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roleIDStr := chi.URLParam(r, "id")
+		roleID, err := uuid.Parse(roleIDStr)
+		if err != nil {
+			api.Error(w, http.StatusBadRequest, "Invalid role ID")
+			return
+		}
+
+		// Delete the role (backend will protect is_system=true)
+		err = querier.DeleteRole(r.Context(), roleID)
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to delete role (it might be in use or is a system role)")
+			return
+		}
+
+		api.Success(w, nil, "Role deleted successfully")
+	}
+}
 
 // IntrospectResponse is the JSON payload returned by the introspection endpoint
 type IntrospectResponse struct {

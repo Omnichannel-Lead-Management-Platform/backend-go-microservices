@@ -537,3 +537,21 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 	)
 	return i, err
 }
+
+const clearRolePermissions = `-- name: ClearRolePermissions :exec
+DELETE FROM role_permissions WHERE role_id = $1
+`
+
+func (q *Queries) ClearRolePermissions(ctx context.Context, roleID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, clearRolePermissions, roleID)
+	return err
+}
+
+const deleteRole = `-- name: DeleteRole :exec
+DELETE FROM roles WHERE id = $1 AND is_system = false
+`
+
+func (q *Queries) DeleteRole(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteRole, id)
+	return err
+}

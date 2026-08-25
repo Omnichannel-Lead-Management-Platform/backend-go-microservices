@@ -12,6 +12,8 @@ import (
 
 type Querier interface {
 	AssignPermissionToRole(ctx context.Context, arg AssignPermissionToRoleParams) error
+	ClearRolePermissions(ctx context.Context, roleID uuid.UUID) error
+	DeleteRole(ctx context.Context, id uuid.UUID) error
 	CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWorkspace(ctx context.Context, name string) (Workspace, error)
