@@ -136,8 +136,36 @@ func ListUsersHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFun
 			api.Error(w, http.StatusInternalServerError, "Failed to retrieve users")
 			return
 		}
+		var responseUsers []map[string]interface{}
+		for _, dbUser := range users {
+			uMap := map[string]interface{}{
+				"id":            dbUser.ID,
+				"workspace_id":  dbUser.WorkspaceID,
+				"name":          dbUser.Name,
+				"email":         dbUser.Email,
+				"emailVerified": dbUser.EmailVerified,
+			}
+			
+			if dbUser.RoleID.Valid {
+				uMap["role_id"] = dbUser.RoleID.UUID.String()
+			} else {
+				uMap["role_id"] = nil
+			}
 
-		api.Success(w, users, "Users retrieved successfully")
+			if dbUser.Image.Valid {
+				uMap["image"] = dbUser.Image.String
+			} else {
+				uMap["image"] = nil
+			}
+
+			if dbUser.CreatedAt.Valid {
+				uMap["createdAt"] = dbUser.CreatedAt.Time
+			}
+
+			responseUsers = append(responseUsers, uMap)
+		}
+
+		api.Success(w, responseUsers, "Users retrieved successfully")
 	}
 }
 
@@ -182,6 +210,56 @@ func UpdateUserRoleHandler(ab *authboss.Authboss, querier db.Querier) http.Handl
 		}
 
 		api.Success(w, nil, "User role updated successfully")
+	}
+}
+
+func GetRolesHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, err := ab.CurrentUser(r)
+		if err != nil || user == nil {
+			api.Error(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		u, _ := user.(*User)
+
+		roles, err := querier.GetRolesByWorkspaceID(r.Context(), u.WorkspaceID)
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to retrieve roles")
+			return
+		}
+
+		api.Success(w, roles, "Roles retrieved successfully")
+	}
+}
+
+func GetPermissionsHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		perms, err := querier.GetAllPermissions(r.Context())
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to retrieve permissions")
+			return
+		}
+
+		api.Success(w, perms, "Permissions retrieved successfully")
+	}
+}
+
+func GetRolePermissionsHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roleIDStr := chi.URLParam(r, "id")
+		roleID, err := uuid.Parse(roleIDStr)
+		if err != nil {
+			api.Error(w, http.StatusBadRequest, "Invalid role ID")
+			return
+		}
+
+		perms, err := querier.GetRolePermissions(r.Context(), roleID)
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to retrieve role permissions")
+			return
+		}
+
+		api.Success(w, perms, "Role permissions retrieved successfully")
 	}
 }
 

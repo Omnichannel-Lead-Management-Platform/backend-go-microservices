@@ -74,9 +74,18 @@ SELECT * FROM roles
 WHERE workspace_id = $1;
 
 
+
 -- name: UpdateWorkspace :one
 UPDATE workspaces
 SET name = $2, settings = $3, updated_at = NOW()
 WHERE id = $1
 RETURNING *;
 
+-- name: GetAllPermissions :many
+SELECT * FROM permissions;
+
+-- name: GetRolePermissions :many
+SELECT p.* 
+FROM permissions p
+JOIN role_permissions rp ON p.id = rp.permission_id
+WHERE rp.role_id = $1;
