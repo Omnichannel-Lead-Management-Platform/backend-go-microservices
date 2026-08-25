@@ -76,7 +76,7 @@ WHERE workspace_id = $1;
 
 -- name: UpdateWorkspace :one
 UPDATE workspaces
-SET name = $2, settings = $3, "updatedAt" = NOW()
+SET name = $2, settings = $3, updated_at = NOW()
 WHERE id = $1
 RETURNING *;
 
