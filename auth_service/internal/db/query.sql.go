@@ -447,7 +447,7 @@ func (q *Queries) UpdateUserTokens(ctx context.Context, arg UpdateUserTokensPara
 
 const updateWorkspace = `-- name: UpdateWorkspace :one
 UPDATE workspaces
-SET name = $2, settings = $3, "updatedAt" = NOW()
+SET name = $2, settings = $3, updated_at = NOW()
 WHERE id = $1
 RETURNING id, name, created_at, updated_at, settings
 `
