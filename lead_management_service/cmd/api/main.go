@@ -17,10 +17,11 @@ import (
 	_ "github.com/lib/pq" // Postgres driver
 
 	handler "github.com/omnichannel/lead_management_service/internal/handler/http"
-	"github.com/omnichannel/lead_management_service/internal/messaging/memory"
+	redis_messaging "github.com/omnichannel/lead_management_service/internal/messaging/redis"
 	"github.com/omnichannel/lead_management_service/internal/repository/postgres"
 	"github.com/omnichannel/lead_management_service/internal/service"
 	"github.com/omnichannel/lead_management_service/internal/worker"
+	"github.com/redis/go-redis/v9"
 )
 
 func runMigrations(dbURL string) {
@@ -57,8 +58,18 @@ func main() {
 	// 2. Wire up the Clean Architecture Layers
 	repo := postgres.NewLeadRepository(db)
 
-	// Pillar 5: Event Bus (Simulating Redis)
-	eventBus := memory.NewEventBus()
+	// Pillar 5: Event Bus (Real Redis Streams!)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	
+	// Test the Redis connection
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+	fmt.Println("Successfully connected to Redis Streams on localhost:6379!")
+
+	eventBus := redis_messaging.NewRedisEventBus(redisClient)
 
 	leadSvc := service.NewLeadService(repo, eventBus)
 	leadHandler := handler.NewLeadHandler(leadSvc)
