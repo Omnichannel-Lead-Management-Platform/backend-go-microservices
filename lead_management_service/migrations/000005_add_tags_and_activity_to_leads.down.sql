@@ -1,0 +1,3 @@
+ALTER TABLE leads 
+DROP COLUMN IF EXISTS tags,
+DROP COLUMN IF EXISTS last_activity_at;
