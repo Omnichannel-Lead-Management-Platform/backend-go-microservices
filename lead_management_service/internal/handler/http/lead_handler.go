@@ -21,41 +21,45 @@ func NewLeadHandler(svc *service.LeadService) *LeadHandler {
 
 // RegisterRoutes connects our URL paths to our functions
 func (h *LeadHandler) RegisterRoutes(r chi.Router) {
-	// We group our routes under /api/v1/leads and apply our MockAuthMiddleware
+	// We group our routes under /api/v1/leads and apply our real AuthMiddleware
 	r.Route("/api/v1/leads", func(r chi.Router) {
-		r.Use(MockAuthMiddleware)
-		
-		r.Get("/", h.ListLeads)
-		r.Post("/", h.CreateLead)
-		r.Patch("/{id}/stage", h.UpdateLeadStage)
-		r.Patch("/{id}/assign", h.AssignLead)
-		r.Patch("/{id}/tags", h.UpdateLeadTags)
-		
-		// Pillar 3: Internal Notes
+		r.Use(AuthMiddleware)
+
+		r.With(RequirePermission("leads:read")).Get("/", h.ListLeads)
+		r.With(RequirePermission("leads:write")).Post("/", h.CreateLead)
+		r.With(RequirePermission("leads:write")).Patch("/{id}/stage", h.UpdateLeadStage)
+		r.With(RequirePermission("leads:write")).Patch("/{id}/assign", h.AssignLead)
+		r.With(RequirePermission("leads:write")).Patch("/{id}/tags", h.UpdateLeadTags)
+
+		//  Internal Notes
 		r.Get("/{id}/notes", h.GetInternalNotes)
 		r.Post("/{id}/notes", h.AddInternalNote)
-		
+
 		// Chat History
 		r.Get("/{id}/messages", h.GetMessagesByLead)
 	})
 
 	// Pipeline Stages API
 	r.Route("/api/v1/stages", func(r chi.Router) {
-		r.Use(MockAuthMiddleware)
-		r.Get("/", h.ListWorkspaceStages)
-		r.Post("/", h.CreateLeadStage)
-		r.Patch("/{id}", h.UpdateLeadStageConfig)
-		r.Delete("/{id}", h.DeleteLeadStage)
-		r.Put("/reorder", h.ReorderLeadStages)
+		r.Use(AuthMiddleware)
+		
+		// For configuration endpoints, we require "workspace:manage" (Admin)
+		r.With(RequirePermission("workspace:manage")).Get("/", h.ListWorkspaceStages)
+		r.With(RequirePermission("workspace:manage")).Post("/", h.CreateLeadStage)
+		r.With(RequirePermission("workspace:manage")).Patch("/{id}", h.UpdateLeadStageConfig)
+		r.With(RequirePermission("workspace:manage")).Delete("/{id}", h.DeleteLeadStage)
+		r.With(RequirePermission("workspace:manage")).Put("/reorder", h.ReorderLeadStages)
 	})
 
 	// Pillar 4: Message Templates API
 	r.Route("/api/v1/templates", func(r chi.Router) {
-		r.Use(MockAuthMiddleware)
-		r.Get("/", h.GetMessageTemplates)
-		r.Post("/", h.CreateMessageTemplate)
-		r.Put("/{id}", h.UpdateMessageTemplate)
-		r.Delete("/{id}", h.DeleteMessageTemplate)
+		r.Use(AuthMiddleware)
+		
+		// Templates also require workspace:manage permission
+		r.With(RequirePermission("workspace:manage")).Get("/", h.GetMessageTemplates)
+		r.With(RequirePermission("workspace:manage")).Post("/", h.CreateMessageTemplate)
+		r.With(RequirePermission("workspace:manage")).Put("/{id}", h.UpdateMessageTemplate)
+		r.With(RequirePermission("workspace:manage")).Delete("/{id}", h.DeleteMessageTemplate)
 	})
 }
 
@@ -88,7 +92,7 @@ func (h *LeadHandler) CreateLead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
 		return
 	}
-	
+
 	// 2. Attach the Workspace ID for security
 	lead.WorkspaceID = workspaceID
 
@@ -105,7 +109,7 @@ func (h *LeadHandler) CreateLead(w http.ResponseWriter, r *http.Request) {
 // UpdateLeadStage runs when an agent drags-and-drops a lead (PATCH /api/v1/leads/123/stage)
 func (h *LeadHandler) UpdateLeadStage(w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.Context().Value(WorkspaceIDKey).(string)
-	
+
 	// 1. Get the Lead ID from the URL (e.g., the '123' in /leads/123/stage)
 	leadID := chi.URLParam(r, "id")
 
@@ -218,16 +222,16 @@ func (h *LeadHandler) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Security & Context Rules
 	note.WorkspaceID = workspaceID
 	// In this simplified version, we'll pretend the lead ID is the conversation ID,
 	// or that the frontend sends conversation_id in the JSON. If it's empty, we set it.
 	if note.ConversationID == "" {
-		note.ConversationID = leadID 
+		note.ConversationID = leadID
 	}
 	// The user ID would normally come from the Auth Middleware JWT
-	note.UserID = r.Header.Get("X-User-ID") 
+	note.UserID = r.Header.Get("X-User-ID")
 
 	if err := h.leadService.AddInternalNote(r.Context(), &note); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -249,7 +253,7 @@ func (h *LeadHandler) CreateLeadStage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Enforce Multi-Tenant Security
 	stage.WorkspaceID = workspaceID
 
