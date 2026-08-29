@@ -17,13 +17,11 @@ import (
 	_ "github.com/lib/pq" // Postgres driver
 
 	handler "github.com/omnichannel/lead_management_service/internal/handler/http"
+	"github.com/omnichannel/lead_management_service/internal/messaging/memory"
 	"github.com/omnichannel/lead_management_service/internal/repository/postgres"
 	"github.com/omnichannel/lead_management_service/internal/service"
-	"github.com/omnichannel/lead_management_service/internal/messaging/memory"
 	"github.com/omnichannel/lead_management_service/internal/worker"
 )
-
-// We removed DummyEventPublisher because we now have a real (in-memory) EventBus!
 
 func runMigrations(dbURL string) {
 	fmt.Println("Running database migrations...")
@@ -58,10 +56,10 @@ func main() {
 
 	// 2. Wire up the Clean Architecture Layers
 	repo := postgres.NewLeadRepository(db)
-	
+
 	// Pillar 5: Event Bus (Simulating Redis)
 	eventBus := memory.NewEventBus()
-	
+
 	leadSvc := service.NewLeadService(repo, eventBus)
 	leadHandler := handler.NewLeadHandler(leadSvc)
 
@@ -82,8 +80,8 @@ func main() {
 
 	// 3. Set up the Chi Router
 	r := chi.NewRouter()
-	r.Use(middleware.Logger) // Logs every incoming web request to the terminal
-	
+	r.Use(middleware.Logger)
+
 	// Register our API endpoints
 	leadHandler.RegisterRoutes(r)
 

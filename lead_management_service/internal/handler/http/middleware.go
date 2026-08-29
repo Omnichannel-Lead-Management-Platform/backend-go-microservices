@@ -7,17 +7,16 @@ import (
 
 // Define custom types for context keys to avoid collisions
 type contextKey string
+
 const (
 	WorkspaceIDKey contextKey = "workspace_id"
 	UserIDKey      contextKey = "user_id"
 )
 
 // MockAuthMiddleware is a temporary security guard.
-// Because the Auth Service isn't built yet, we will just look at HTTP Headers.
-// When the real Auth Service is ready, this will be replaced with a JWT Token checker.
 func MockAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		
+
 		// 1. Look at the incoming request's headers
 		workspaceID := r.Header.Get("X-Workspace-ID")
 		userID := r.Header.Get("X-User-ID")
@@ -31,7 +30,7 @@ func MockAuthMiddleware(next http.Handler) http.Handler {
 		// 3. Put the ID securely into the Request Context so our Handlers can use it
 		ctx := context.WithValue(r.Context(), WorkspaceIDKey, workspaceID)
 		ctx = context.WithValue(ctx, UserIDKey, userID)
-		
+
 		// 4. Let the user pass through to the actual URL handler
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

@@ -60,6 +60,12 @@ func (w *AISummaryWorker) handleEvent(event domain.Event) {
 	leadID := payload["lead_id"].(string)
 	newStage := payload["new_stage"].(string)
 
+	// Cost-Saving Optimization: Only run AI on terminal stages
+	if newStage != "Won" && newStage != "Lost" {
+		log.Printf("⏭️  [AI WORKER] Ignoring stage change to '%s' (Not a terminal state). Saving API costs.", newStage)
+		return
+	}
+
 	log.Printf("\n=======================================================")
 	log.Printf("🤖 [AI WORKER WOKE UP] Event Received: Lead %s moved to stage '%s'", leadID, newStage)
 	
