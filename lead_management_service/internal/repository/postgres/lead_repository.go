@@ -43,6 +43,17 @@ func (r *LeadRepository) CreateLead(ctx context.Context, lead *domain.Lead) erro
 	if err != nil {
 		return fmt.Errorf("failed to create lead: %w", err)
 	}
+
+	// Create a default conversation for this lead so internal notes work
+	convQuery := `
+		INSERT INTO conversations (workspace_id, lead_id)
+		VALUES ($1, $2)
+	`
+	_, err = r.db.ExecContext(ctx, convQuery, lead.WorkspaceID, lead.ID)
+	if err != nil {
+		fmt.Printf("ERROR creating default conversation: %v\n", err)
+	}
+
 	return nil
 }
 
@@ -310,15 +321,34 @@ func (r *LeadRepository) UpdateLeadStagePositions(ctx context.Context, workspace
 
 // AddInternalNote inserts a private note left by an agent.
 func (r *LeadRepository) AddInternalNote(ctx context.Context, note *domain.InternalNote) error {
+	// The handler temporarily shoved the leadID into note.ConversationID for us
+	leadID := note.ConversationID 
+	
+	// First, fetch the actual conversation ID for this lead
+	var realConversationID string
+	err := r.db.QueryRowContext(ctx, "SELECT id FROM conversations WHERE lead_id = $1 LIMIT 1", leadID).Scan(&realConversationID)
+	if err != nil {
+		return fmt.Errorf("could not find conversation for lead: %w", err)
+	}
+
 	query := `
 		INSERT INTO internal_notes (workspace_id, conversation_id, user_id, content)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at, updated_at
 	`
-	err := r.db.QueryRowContext(ctx, query,
+	
+	// Handle empty UserID correctly for PostgreSQL UUID type
+	var dbUserID interface{}
+	if note.UserID == "" {
+		dbUserID = nil
+	} else {
+		dbUserID = note.UserID
+	}
+
+	err = r.db.QueryRowContext(ctx, query,
 		note.WorkspaceID,
-		note.ConversationID,
-		note.UserID,
+		realConversationID,
+		dbUserID,
 		note.Content,
 	).Scan(&note.ID, &note.CreatedAt, &note.UpdatedAt)
 
