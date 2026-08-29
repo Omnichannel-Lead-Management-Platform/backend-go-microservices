@@ -124,6 +124,38 @@ func (q *Queries) CreateWorkspace(ctx context.Context, name string) (Workspace, 
 	return i, err
 }
 
+const getAllPermissions = `-- name: GetAllPermissions :many
+SELECT id, name, description, created_at FROM permissions
+`
+
+func (q *Queries) GetAllPermissions(ctx context.Context) ([]Permission, error) {
+	rows, err := q.db.QueryContext(ctx, getAllPermissions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Permission
+	for rows.Next() {
+		var i Permission
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPermissionByName = `-- name: GetPermissionByName :one
 SELECT id, name, description, created_at FROM permissions
 WHERE name = $1 LIMIT 1
@@ -164,6 +196,41 @@ func (q *Queries) GetRoleByName(ctx context.Context, arg GetRoleByNameParams) (R
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getRolePermissions = `-- name: GetRolePermissions :many
+SELECT p.id, p.name, p.description, p.created_at 
+FROM permissions p
+JOIN role_permissions rp ON p.id = rp.permission_id
+WHERE rp.role_id = $1
+`
+
+func (q *Queries) GetRolePermissions(ctx context.Context, roleID uuid.UUID) ([]Permission, error) {
+	rows, err := q.db.QueryContext(ctx, getRolePermissions, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Permission
+	for rows.Next() {
+		var i Permission
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getRolesByWorkspaceID = `-- name: GetRolesByWorkspaceID :many
@@ -447,7 +514,7 @@ func (q *Queries) UpdateUserTokens(ctx context.Context, arg UpdateUserTokensPara
 
 const updateWorkspace = `-- name: UpdateWorkspace :one
 UPDATE workspaces
-SET name = $2, settings = $3, "updatedAt" = NOW()
+SET name = $2, settings = $3, updated_at = NOW()
 WHERE id = $1
 RETURNING id, name, created_at, updated_at, settings
 `
@@ -469,4 +536,22 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.Settings,
 	)
 	return i, err
+}
+
+const clearRolePermissions = `-- name: ClearRolePermissions :exec
+DELETE FROM role_permissions WHERE role_id = $1
+`
+
+func (q *Queries) ClearRolePermissions(ctx context.Context, roleID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, clearRolePermissions, roleID)
+	return err
+}
+
+const deleteRole = `-- name: DeleteRole :exec
+DELETE FROM roles WHERE id = $1 AND is_system = false
+`
+
+func (q *Queries) DeleteRole(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteRole, id)
+	return err
 }

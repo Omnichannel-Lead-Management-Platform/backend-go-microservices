@@ -136,8 +136,36 @@ func ListUsersHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFun
 			api.Error(w, http.StatusInternalServerError, "Failed to retrieve users")
 			return
 		}
+		var responseUsers []map[string]interface{}
+		for _, dbUser := range users {
+			uMap := map[string]interface{}{
+				"id":            dbUser.ID,
+				"workspace_id":  dbUser.WorkspaceID,
+				"name":          dbUser.Name,
+				"email":         dbUser.Email,
+				"emailVerified": dbUser.EmailVerified,
+			}
+			
+			if dbUser.RoleID.Valid {
+				uMap["role_id"] = dbUser.RoleID.UUID.String()
+			} else {
+				uMap["role_id"] = nil
+			}
 
-		api.Success(w, users, "Users retrieved successfully")
+			if dbUser.Image.Valid {
+				uMap["image"] = dbUser.Image.String
+			} else {
+				uMap["image"] = nil
+			}
+
+			if dbUser.CreatedAt.Valid {
+				uMap["createdAt"] = dbUser.CreatedAt.Time
+			}
+
+			responseUsers = append(responseUsers, uMap)
+		}
+
+		api.Success(w, responseUsers, "Users retrieved successfully")
 	}
 }
 
@@ -185,7 +213,114 @@ func UpdateUserRoleHandler(ab *authboss.Authboss, querier db.Querier) http.Handl
 	}
 }
 
+func GetRolesHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, err := ab.CurrentUser(r)
+		if err != nil || user == nil {
+			api.Error(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		u, _ := user.(*User)
 
+		roles, err := querier.GetRolesByWorkspaceID(r.Context(), u.WorkspaceID)
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to retrieve roles")
+			return
+		}
+
+		api.Success(w, roles, "Roles retrieved successfully")
+	}
+}
+
+func GetPermissionsHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		perms, err := querier.GetAllPermissions(r.Context())
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to retrieve permissions")
+			return
+		}
+
+		api.Success(w, perms, "Permissions retrieved successfully")
+	}
+}
+
+func GetRolePermissionsHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roleIDStr := chi.URLParam(r, "id")
+		roleID, err := uuid.Parse(roleIDStr)
+		if err != nil {
+			api.Error(w, http.StatusBadRequest, "Invalid role ID")
+			return
+		}
+
+		perms, err := querier.GetRolePermissions(r.Context(), roleID)
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to retrieve role permissions")
+			return
+		}
+
+		api.Success(w, perms, "Role permissions retrieved successfully")
+	}
+}
+
+type UpdateRolePermissionsRequest struct {
+	Permissions []string `json:"permissions"`
+}
+
+func UpdateRolePermissionsHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roleIDStr := chi.URLParam(r, "id")
+		roleID, err := uuid.Parse(roleIDStr)
+		if err != nil {
+			api.Error(w, http.StatusBadRequest, "Invalid role ID")
+			return
+		}
+
+		var req UpdateRolePermissionsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			api.Error(w, http.StatusBadRequest, "Invalid request payload")
+			return
+		}
+		
+		err = querier.ClearRolePermissions(r.Context(), roleID)
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to clear old permissions")
+			return
+		}
+
+		for _, p := range req.Permissions {
+			perm, err := querier.GetPermissionByName(r.Context(), p)
+			if err == nil {
+				querier.AssignPermissionToRole(r.Context(), db.AssignPermissionToRoleParams{
+					RoleID:       roleID,
+					PermissionID: perm.ID,
+				})
+			}
+		}
+
+		api.Success(w, nil, "Role permissions updated successfully")
+	}
+}
+
+func DeleteRoleHandler(ab *authboss.Authboss, querier db.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roleIDStr := chi.URLParam(r, "id")
+		roleID, err := uuid.Parse(roleIDStr)
+		if err != nil {
+			api.Error(w, http.StatusBadRequest, "Invalid role ID")
+			return
+		}
+
+		// Delete the role (backend will protect is_system=true)
+		err = querier.DeleteRole(r.Context(), roleID)
+		if err != nil {
+			api.Error(w, http.StatusInternalServerError, "Failed to delete role (it might be in use or is a system role)")
+			return
+		}
+
+		api.Success(w, nil, "Role deleted successfully")
+	}
+}
 
 // IntrospectResponse is the JSON payload returned by the introspection endpoint
 type IntrospectResponse struct {

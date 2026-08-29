@@ -82,6 +82,7 @@ func (j *JWTReadWriter) ReadState(r *http.Request) (authboss.ClientState, error)
 
 // WriteState creates a new JWT and adds it to the HTTP response header
 func (j *JWTReadWriter) WriteState(w http.ResponseWriter, state authboss.ClientState, ev []authboss.ClientStateEvent) error {
+	fmt.Printf("DEBUG: WriteState called with %d events\n", len(ev))
 	jwtState, ok := state.(*JWTClientState)
 	if !ok {
 		// If it's a completely new state, initialize it

@@ -181,7 +181,12 @@ func main() {
 		r.Group(func(adminRoutes chi.Router) {
 			adminRoutes.Use(auth.RequirePermission(ab, "users:manage"))
 			adminRoutes.Post("/api/auth/invite", auth.GenerateInviteHandler(ab))
+			adminRoutes.Get("/api/auth/roles", auth.GetRolesHandler(ab, querier))
 			adminRoutes.Post("/api/auth/roles", auth.CreateRoleHandler(ab, querier))
+			adminRoutes.Get("/api/auth/permissions", auth.GetPermissionsHandler(ab, querier))
+			adminRoutes.Get("/api/auth/roles/{id}/permissions", auth.GetRolePermissionsHandler(ab, querier))
+			adminRoutes.Put("/api/auth/roles/{id}/permissions", auth.UpdateRolePermissionsHandler(ab, querier))
+			adminRoutes.Delete("/api/auth/roles/{id}", auth.DeleteRoleHandler(ab, querier))
 			adminRoutes.Get("/api/auth/users", auth.ListUsersHandler(ab, querier))
 			adminRoutes.Put("/api/auth/users/{id}/role", auth.UpdateUserRoleHandler(ab, querier))
 			adminRoutes.Get("/api/auth/workspace", auth.GetWorkspaceHandler(ab, querier))
