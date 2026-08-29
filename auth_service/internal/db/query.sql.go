@@ -29,6 +29,15 @@ func (q *Queries) AssignPermissionToRole(ctx context.Context, arg AssignPermissi
 	return err
 }
 
+const clearRolePermissions = `-- name: ClearRolePermissions :exec
+DELETE FROM role_permissions WHERE role_id = $1
+`
+
+func (q *Queries) ClearRolePermissions(ctx context.Context, roleID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, clearRolePermissions, roleID)
+	return err
+}
+
 const createRole = `-- name: CreateRole :one
 INSERT INTO roles (workspace_id, name, description, is_system)
 VALUES ($1, $2, $3, $4)
@@ -122,6 +131,15 @@ func (q *Queries) CreateWorkspace(ctx context.Context, name string) (Workspace, 
 		&i.Settings,
 	)
 	return i, err
+}
+
+const deleteRole = `-- name: DeleteRole :exec
+DELETE FROM roles WHERE id = $1 AND is_system = false
+`
+
+func (q *Queries) DeleteRole(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteRole, id)
+	return err
 }
 
 const getAllPermissions = `-- name: GetAllPermissions :many
@@ -302,6 +320,31 @@ WHERE id = $1 LIMIT 1
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	row := q.db.QueryRowContext(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Email,
+		&i.Password,
+		&i.EmailVerified,
+		&i.Image,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RecoverToken,
+		&i.RecoverTokenExpiry,
+		&i.ConfirmToken,
+		&i.RoleID,
+	)
+	return i, err
+}
+
+const getUserByRecoverToken = `-- name: GetUserByRecoverToken :one
+SELECT id, workspace_id, name, email, password, "emailVerified", image, "createdAt", "updatedAt", recover_token, recover_token_expiry, confirm_token, role_id FROM users WHERE recover_token LIKE $1 || ':%'
+`
+
+func (q *Queries) GetUserByRecoverToken(ctx context.Context, dollar_1 sql.NullString) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByRecoverToken, dollar_1)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -536,22 +579,4 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.Settings,
 	)
 	return i, err
-}
-
-const clearRolePermissions = `-- name: ClearRolePermissions :exec
-DELETE FROM role_permissions WHERE role_id = $1
-`
-
-func (q *Queries) ClearRolePermissions(ctx context.Context, roleID uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, clearRolePermissions, roleID)
-	return err
-}
-
-const deleteRole = `-- name: DeleteRole :exec
-DELETE FROM roles WHERE id = $1 AND is_system = false
-`
-
-func (q *Queries) DeleteRole(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, deleteRole, id)
-	return err
 }

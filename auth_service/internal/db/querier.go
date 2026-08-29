@@ -6,6 +6,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 )
@@ -13,10 +14,10 @@ import (
 type Querier interface {
 	AssignPermissionToRole(ctx context.Context, arg AssignPermissionToRoleParams) error
 	ClearRolePermissions(ctx context.Context, roleID uuid.UUID) error
-	DeleteRole(ctx context.Context, id uuid.UUID) error
 	CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWorkspace(ctx context.Context, name string) (Workspace, error)
+	DeleteRole(ctx context.Context, id uuid.UUID) error
 	GetAllPermissions(ctx context.Context) ([]Permission, error)
 	GetPermissionByName(ctx context.Context, name string) (Permission, error)
 	GetRoleByName(ctx context.Context, arg GetRoleByNameParams) (Role, error)
@@ -24,6 +25,7 @@ type Querier interface {
 	GetRolesByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) ([]Role, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	GetUserByRecoverToken(ctx context.Context, dollar_1 sql.NullString) (User, error)
 	GetUserPermissions(ctx context.Context, id uuid.UUID) ([]string, error)
 	GetUsersByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) ([]GetUsersByWorkspaceIDRow, error)
 	GetWorkspaceByID(ctx context.Context, id uuid.UUID) (Workspace, error)

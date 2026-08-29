@@ -21,8 +21,8 @@ func (a *APIResponder) Respond(w http.ResponseWriter, r *http.Request, code int,
 		fmt.Printf("DEBUG: HTMLData key: %s, type: %T\n", k, v)
 	}
 	
-	// Authboss stores validation errors in the "errors" map
-	if errsRaw, ok := data["errors"]; ok {
+	// Authboss stores validation errors in the DataValidation ("errs") map
+	if errsRaw, ok := data[authboss.DataValidation]; ok {
 		if errsMap, ok := errsRaw.(map[string][]string); ok && len(errsMap) > 0 {
 			var errorMessages []string
 			for field, msgs := range errsMap {

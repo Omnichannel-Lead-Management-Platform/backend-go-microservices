@@ -89,3 +89,12 @@ SELECT p.*
 FROM permissions p
 JOIN role_permissions rp ON p.id = rp.permission_id
 WHERE rp.role_id = $1;
+
+-- name: ClearRolePermissions :exec
+DELETE FROM role_permissions WHERE role_id = $1;
+
+-- name: DeleteRole :exec
+DELETE FROM roles WHERE id = $1 AND is_system = false;
+
+-- name: GetUserByRecoverToken :one
+SELECT * FROM users WHERE recover_token LIKE $1 || ':%';

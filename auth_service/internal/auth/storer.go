@@ -54,22 +54,32 @@ func (u *User) PutEmail(email string) {
 
 func (u *User) GetRecoverSelector() string {
 	if u.RecoverToken.Valid {
-		// In a real implementation with split tokens, this would be a selector column
-		return u.RecoverToken.String
+		parts := strings.Split(u.RecoverToken.String, ":")
+		if len(parts) > 0 {
+			return parts[0]
+		}
 	}
 	return ""
 }
 
 func (u *User) PutRecoverSelector(selector string) {
-	u.RecoverToken = sql.NullString{String: selector, Valid: true}
+	verifier := u.GetRecoverVerifier()
+	u.RecoverToken = sql.NullString{String: selector + ":" + verifier, Valid: true}
 }
 
 func (u *User) GetRecoverVerifier() string {
-	return u.GetRecoverSelector() // For simplicity if using a single token
+	if u.RecoverToken.Valid {
+		parts := strings.Split(u.RecoverToken.String, ":")
+		if len(parts) == 2 {
+			return parts[1]
+		}
+	}
+	return ""
 }
 
 func (u *User) PutRecoverVerifier(verifier string) {
-	// Not storing verifier separately in this simple implementation
+	selector := u.GetRecoverSelector()
+	u.RecoverToken = sql.NullString{String: selector + ":" + verifier, Valid: true}
 }
 
 func (u *User) GetRecoverExpiry() time.Time {
@@ -94,6 +104,25 @@ func NewServerStorer(querier db.Querier) *ServerStorer {
 
 func (s *ServerStorer) Load(ctx context.Context, key string) (authboss.User, error) {
 	user, err := s.db.GetUserByEmail(ctx, key)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, authboss.ErrUserNotFound
+		}
+		return nil, err
+	}
+	
+	// Fetch permissions
+	perms, err := s.db.GetUserPermissions(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &User{User: user, Permissions: perms}, nil
+}
+
+func (s *ServerStorer) LoadByRecoverSelector(ctx context.Context, selector string) (authboss.RecoverableUser, error) {
+	fmt.Printf("DEBUG: LoadByRecoverSelector called with selector: %q\n", selector)
+	user, err := s.db.GetUserByRecoverToken(ctx, sql.NullString{String: selector, Valid: true})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, authboss.ErrUserNotFound
