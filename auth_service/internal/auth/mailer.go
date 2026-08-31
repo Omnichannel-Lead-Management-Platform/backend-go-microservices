@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/aarondl/authboss/v3"
+	"github.com/omnichannel/common/logger"
+	"go.uber.org/zap"
 	"gopkg.in/gomail.v2"
 )
 
@@ -32,11 +34,11 @@ func (f *FileMailer) Send(ctx context.Context, email authboss.Email) error {
 
 	err := os.WriteFile(filePath, []byte(content), 0644)
 	if err != nil {
-		fmt.Printf("Failed to write email to file: %v\n", err)
+		logger.Log.Error("Failed to write email to file", zap.Error(err))
 		return err
 	}
 
-	fmt.Printf("Email successfully saved to %s\n", filePath)
+	logger.Log.Info("Email successfully saved", zap.String("path", filePath))
 	return nil
 }
 
@@ -95,12 +97,11 @@ func (m *SMTPMailer) Send(ctx context.Context, email authboss.Email) error {
 
 	dialer := gomail.NewDialer(m.Host, m.Port, m.Username, m.Password)
 	
-	err := dialer.DialAndSend(msg)
-	if err != nil {
-		fmt.Printf("Failed to send email via SMTP: %v\n", err)
+	if err := dialer.DialAndSend(msg); err != nil {
+		logger.Log.Error("Failed to send email via SMTP", zap.Error(err))
 		return err
 	}
-	fmt.Printf("Email successfully sent to %v\n", email.To)
+
+	logger.Log.Info("Email successfully sent", zap.Any("to", email.To))
 	return nil
 }
-
