@@ -9,6 +9,8 @@ import (
 
 	"github.com/aarondl/authboss/v3"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/omnichannel/common/logger"
+	"go.uber.org/zap"
 )
 
 var JWTSecret = []byte("super-secret-jwt-key-replace-in-prod")
@@ -82,7 +84,7 @@ func (j *JWTReadWriter) ReadState(r *http.Request) (authboss.ClientState, error)
 
 // WriteState creates a new JWT and adds it to the HTTP response header
 func (j *JWTReadWriter) WriteState(w http.ResponseWriter, state authboss.ClientState, ev []authboss.ClientStateEvent) error {
-	fmt.Printf("DEBUG: WriteState called with %d events\n", len(ev))
+	logger.Log.Debug("WriteState called", zap.Int("events", len(ev)))
 	jwtState, ok := state.(*JWTClientState)
 	if !ok {
 		// If it's a completely new state, initialize it

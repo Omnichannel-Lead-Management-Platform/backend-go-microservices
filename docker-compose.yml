@@ -39,6 +39,8 @@ services:
       - ./auth_service/.env
     depends_on:
       - postgres
+    volumes:
+      - ./logs:/app/logs
 
   lead_management_service:
     build: ./lead_management_service
@@ -49,6 +51,8 @@ services:
     depends_on:
       - postgres
       - redis
+    volumes:
+      - ./logs:/app/logs
 
   chatbot_service:
     build: ./chatbot_service
@@ -59,6 +63,8 @@ services:
     depends_on:
       - postgres
       - redis
+    volumes:
+      - ./logs:/app/logs
 
   reporting_service:
     build: ./reporting_service
@@ -69,6 +75,8 @@ services:
     depends_on:
       - postgres
       - redis
+    volumes:
+      - ./logs:/app/logs
 
   messaging_gateway_service:
     build: ./messaging_gateway_service
@@ -78,6 +86,8 @@ services:
       - ./messaging_gateway_service/.env
     depends_on:
       - redis
+    volumes:
+      - ./logs:/app/logs
 
 volumes:
   pgdata:

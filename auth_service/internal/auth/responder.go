@@ -7,6 +7,8 @@ import (
 
 	"github.com/aarondl/authboss/v3"
 	"github.com/omnichannel/common/api"
+	"github.com/omnichannel/common/logger"
+	"go.uber.org/zap"
 )
 
 // APIResponder implements authboss.Responder to output standard JSON
@@ -18,7 +20,7 @@ func NewAPIResponder() *APIResponder {
 
 func (a *APIResponder) Respond(w http.ResponseWriter, r *http.Request, code int, templateName string, data authboss.HTMLData) error {
 	for k, v := range data {
-		fmt.Printf("DEBUG: HTMLData key: %s, type: %T\n", k, v)
+		logger.Log.Debug("HTMLData key", zap.String("key", k), zap.Any("type", v))
 	}
 	
 	// Authboss stores validation errors in the "errors" map
@@ -70,7 +72,7 @@ func (a *APIResponder) Respond(w http.ResponseWriter, r *http.Request, code int,
 // Redirect intercepts Authboss successful actions (like successful login or registration)
 // and returns a standardized JSON 200 OK instead of actually doing an HTTP 302/307 redirect.
 func (a *APIResponder) Redirect(w http.ResponseWriter, r *http.Request, ro authboss.RedirectOptions) error {
-	fmt.Println("CUSTOM REDIRECTOR CALLED!!!")
+	logger.Log.Debug("Custom redirector called")
 	successMsg := ro.Success
 	if successMsg == "" {
 		successMsg = "Success"

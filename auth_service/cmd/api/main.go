@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +10,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/omnichannel/common/logger"
+	"go.uber.org/zap"
 
 	"github.com/go-chi/cors"
 	"github.com/go-chi/httprate"
@@ -23,7 +25,6 @@ import (
 	_ "github.com/aarondl/authboss/v3/register"
 	_ "github.com/aarondl/authboss/v3/recover"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -34,22 +35,27 @@ import (
 )
 
 func runMigrations(dbURL string) {
-	fmt.Println("Running database migrations...")
+	logger.Log.Info("Running database migrations...")
 	time.Sleep(2 * time.Second)
 
 	m, err := migrate.New("file://migrations", dbURL)
 	if err != nil {
-		log.Fatalf("Failed to initialize migrations: %v", err)
+		logger.Log.Fatal("Failed to initialize migrations", zap.Error(err))
 	}
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("Failed to run migrations: %v", err)
+		logger.Log.Fatal("Failed to run migrations", zap.Error(err))
 	}
-	fmt.Println("Migrations applied successfully!")
+	logger.Log.Info("Migrations applied successfully!")
 }
 
 func main() {
+	if err := logger.Init("auth_service"); err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer logger.Log.Sync() // flushes buffer, if any
+
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, relying on environment variables")
+		logger.Log.Info("No .env file found, relying on environment variables")
 	}
 
 	dbURL := os.Getenv("DATABASE_URL")
@@ -60,7 +66,7 @@ func main() {
 
 	conn, err := sql.Open("postgres", dbURL)
 	if err != nil {
-		log.Fatalf("cannot connect to db: %v", err)
+		logger.Log.Fatal("cannot connect to db", zap.Error(err))
 	}
 	defer conn.Close()
 
@@ -88,7 +94,7 @@ func main() {
 	}
 
 	ab.Config.Core.Mailer = auth.NewSMTPMailer()
-	ab.Config.Core.Logger = defaults.NewLogger(os.Stdout)
+	ab.Config.Core.Logger = logger.NewAuthbossLoggerAdapter(logger.Log)
 
 	// Define the mount path so Authboss internally registers the correct URLs
 	ab.Config.Paths.Mount = "/api/auth"
@@ -112,7 +118,7 @@ func main() {
 	ab.Config.Storage.CookieState = auth.NewJWTReadWriter(blacklister)
 
 	if err := ab.Init(); err != nil {
-		log.Fatalf("Authboss init failed: %v", err)
+		logger.Log.Fatal("Authboss init failed", zap.Error(err))
 	}
 	
 	// Force override in case ab.Init() overwrites it in API mode
@@ -150,7 +156,7 @@ func main() {
 	})
 
 	router := chi.NewRouter()
-	router.Use(middleware.Logger)
+	router.Use(logger.ChiLogger(logger.Log))
 	
 	// CORS middleware
 	router.Use(cors.Handler(cors.Options{
@@ -198,7 +204,7 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	fmt.Printf("Starting auth_service on port %s...\n", port)
+	logger.Log.Info("Starting auth_service", zap.String("port", port))
 	
 	srv := &http.Server{
 		Addr:    ":" + port,
@@ -207,7 +213,7 @@ func main() {
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed to start: %v", err)
+			logger.Log.Fatal("Server failed to start", zap.Error(err))
 		}
 	}()
 
@@ -216,16 +222,16 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	logger.Log.Info("Shutting down server...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		logger.Log.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 
-	log.Println("Server exiting")
+	logger.Log.Info("Server exiting")
 }
 
 type RedisTokenBlacklister struct {
